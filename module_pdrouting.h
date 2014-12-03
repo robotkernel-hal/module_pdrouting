@@ -56,6 +56,11 @@ class pdrouting : public robotkernel::trigger_base {
 
             pdinfo_t in;
             pdinfo_t out;
+
+            void create_route(std::string base_mdl_nam);
+            void destroy_route(std::string base_mdl_nam);
+        
+            robotkernel::kernel::interface_id_t pd_interface_id;
         } pdroute_t;
 
         typedef std::map<uint32_t, pdroute_t *> route_map_t;
