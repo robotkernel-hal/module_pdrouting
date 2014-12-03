@@ -37,6 +37,30 @@ class pdrouting : public robotkernel::trigger_base {
         module_state_t   _state;    //!< actual module state
 
     public:
+        typedef struct pdroute {
+            //! construction
+            /*!
+             * \param node yaml intialization node
+             */
+            pdroute(const YAML::Node& node);
+
+            uint32_t slave_id;
+
+            typedef struct pdinfo {
+                std::string modname;
+                uint32_t slave_id;
+                uint32_t pd_offset;
+                uint32_t pd_len;
+                void *pd;
+            } pdinfo_t;
+
+            pdinfo_t in;
+            pdinfo_t out;
+        } pdroute_t;
+
+        typedef std::map<uint32_t, pdroute_t *> route_map_t;
+        route_map_t _routes;
+
         //! construction
         /*!
          * \param node yaml intialization node

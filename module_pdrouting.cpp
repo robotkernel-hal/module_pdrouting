@@ -58,6 +58,32 @@ void pdrouting::mlog(robotkernel::loglevel lvl, const char *format, ...) {
     vsnprintf(buf, 1024, format, args);
     klog(lvl, "[module_pdrouting|%s] %s", _name.c_str(), buf);
 }
+            
+//! construction
+/*!
+ * \param node yaml intialization node
+ */
+pdrouting::pdroute::pdroute(const YAML::Node& node) {
+    slave_id = node["slave_id"].to<uint32_t>();
+    memset(&in, 0, sizeof(in));
+    memset(&out, 0, sizeof(out));
+
+    const YAML::Node *in_node = node.FindValue("in");
+    if (in_node) {
+        in.modname   = (*in_node)["modname"].to<string>();
+        in.slave_id  = (*in_node)["slave_id"].to<uint32_t>();
+        in.pd_offset = (*in_node)["pd_offset"].to<uint32_t>();
+        in.pd_len    = (*in_node)["pd_len"].to<uint32_t>();
+    }
+    
+    const YAML::Node *out_node = node.FindValue("out");
+    if (out_node) {
+        out.modname   = (*out_node)["modname"].to<string>();
+        out.slave_id  = (*out_node)["slave_id"].to<uint32_t>();
+        out.pd_offset = (*out_node)["pd_offset"].to<uint32_t>();
+        out.pd_len    = (*out_node)["pd_len"].to<uint32_t>();
+    }
+}
 
 //! construction
 /*!
@@ -65,6 +91,11 @@ void pdrouting::mlog(robotkernel::loglevel lvl, const char *format, ...) {
  */
 pdrouting::pdrouting(const std::string& name, const YAML::Node& node) {
     _name       = name;
+
+    for(unsigned i = 0; i < node.size(); ++i) {
+        pdroute *p = new pdroute(node[i]);
+        _routes[p->slave_id] = p;
+    }
 
     set_state(module_state_init);
 }

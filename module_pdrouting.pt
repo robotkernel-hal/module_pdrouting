@@ -1,5 +1,5 @@
 PTVERSION           = 2
-NAME                = module_lntopics
+NAME                = module_pdrouting
 VERSION             = 3.0.0
 DESCRIPTION         = robotkernel lntopics publisher and subscribers
 MAINTAINER          = Robert Burger <robert.burger@dlr.de>

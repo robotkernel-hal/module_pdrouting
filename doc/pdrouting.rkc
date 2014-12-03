@@ -1,0 +1,25 @@
+# vim: tabstop=4 softtabstop=4 shiftwidth=4 expandtab:
+
+loglevel: [ 
+    error, warning, info, 
+    module_error, module_warning, module_info, 
+    interface_error, interface_warning, interface_info 
+    ]
+
+modules:
+-   name: my_pdrouting
+    module_file: libmodule_pdrouting.so    
+    config: 
+    -   slave_id: 30
+        in:
+            modname: spw
+            slave_id: 67
+            pd_offset: 32
+            pd_len: 32
+        out:
+            modname: spw
+            slave_id: 132
+            pd_offset: 16
+            pd_len: 8
+    power_up: true
+

@@ -1,11 +1,11 @@
 ACLOCAL_AMFLAGS = -I m4 
 
 libdir = $(prefix)/lib
-lib_LTLIBRARIES = libmodule_lntopics.la
+lib_LTLIBRARIES = libmodule_pdrouting.la
 
-libmodule_lntopics_la_SOURCES  = module_lntopics.cpp
-libmodule_lntopics_la_CXXFLAGS = -Wall -I$(top_builddir) @ROBOTKERNEL_CFLAGS@
-libmodule_lntopics_la_LDFLAGS  = -Wall -release $(PACKAGE_VERSION)
+libmodule_pdrouting_la_SOURCES  = module_pdrouting.cpp
+libmodule_pdrouting_la_CXXFLAGS = -Wall -I$(top_builddir) @ROBOTKERNEL_CFLAGS@
+libmodule_pdrouting_la_LDFLAGS  = -Wall -release $(PACKAGE_VERSION)
 
 install-exec-hook:
 	mkdir -p $(prefix)/share/ln
