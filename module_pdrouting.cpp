@@ -239,7 +239,8 @@ int pdrouting::request(int reqcode, void* ptr) {
                 break;
             }
 
-            add_trigger_module(*cb);
+            if (_routes.find(cb->clk_id) != _routes.end())
+                _routes[cb->clk_id]->add_trigger_module(*cb);
             break;
         }
         case MOD_REQUEST_UNSET_TRIGGER_CB: {
@@ -250,7 +251,8 @@ int pdrouting::request(int reqcode, void* ptr) {
                 break;
             }
 
-            remove_trigger_module(*cb);
+            if (_routes.find(cb->clk_id) != _routes.end())
+                _routes[cb->clk_id]->remove_trigger_module(*cb);
             break;
         }
         default:
@@ -263,7 +265,6 @@ int pdrouting::request(int reqcode, void* ptr) {
 
 //! module trigger callback
 void pdrouting::trigger() {
-    trigger_modules();
 }
 
 #ifdef __cplusplus

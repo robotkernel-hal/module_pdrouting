@@ -31,13 +31,13 @@
 #include "robotkernel/kernel.h"
 #include "robotkernel/trigger_base.h"
 
-class pdrouting : public robotkernel::trigger_base {
+class pdrouting {
     public:
         std::string _name;          //!< module name
         module_state_t   _state;    //!< actual module state
 
     public:
-        typedef struct pdroute {
+        typedef struct pdroute : public robotkernel::trigger_base {
             //! construction
             /*!
              * \param node yaml intialization node
