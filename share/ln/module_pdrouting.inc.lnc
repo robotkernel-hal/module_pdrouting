@@ -1,20 +1,20 @@
 requires_version 0.2.43
 # this include file can be customized with the following defines:
-#   module_lntopics_base
-#     (optional) path to module_lntopics base directory
-#     e.g. /volume/software/robotkernel/packages/module_lntopics/3.0.1
+#   module_pdrouting_base
+#     (optional) path to module_pdrouting base directory
+#     e.g. /volume/software/robotkernel/packages/module_pdrouting/3.0.1
 #     defaults to rmpm structure
-#   module_lntopics_libdir
+#   module_pdrouting_libdir
 #     (optional) add custom module search paths
-#   module_lntopics_mds
+#   module_pdrouting_mds
 #     (optional) add custom message definition paths
 
 defines
-module_lntopics_base: %(dirname %(dirname %(CURDIR)))
-module_lntopics_base_type: %(ifexists "%(module_lntopics_base)/lib/libmodule_lntopics.so", "local_install", "rmpm_release")
-module_lntopics_libdir: %(ifeq "%(module_lntopics_base_type)", "local_install", "%(module_lntopics_base)/lib", "%(module_lntopics_base)/lib/$(ARCH)")
-add_message_definition_dir: %(module_lntopics_base)/share/message_definitions
+module_pdrouting_base: %(dirname %(dirname %(CURDIR)))
+module_pdrouting_base_type: %(ifexists "%(module_pdrouting_base)/lib/libmodule_pdrouting.so", "local_install", "rmpm_release")
+module_pdrouting_libdir: %(ifeq "%(module_pdrouting_base_type)", "local_install", "%(module_pdrouting_base)/lib", "%(module_pdrouting_base)/lib/$(ARCH)")
+add_message_definition_dir: %(module_pdrouting_base)/share/message_definitions
 
 ifndef rk_modules: rk_modules: ""
-rk_modules: %(rk_modules):%(module_lntopics_libdir)
+rk_modules: %(rk_modules):%(module_pdrouting_libdir)
 
