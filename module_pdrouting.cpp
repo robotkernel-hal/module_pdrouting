@@ -89,6 +89,9 @@ pdrouting::pdroute::pdroute(const YAML::Node& node) {
 void pdrouting::pdroute::create_route(std::string base_mdl_name) {
     kernel& k = *kernel::get_instance();
 
+    klog(module_info, "[module_pdrouting|%s] creating route slave_id %d\n",
+            base_mdl_name.c_str(), slave_id);
+
     // direction inputs ===========
     if (in.pd_len > 0) { 
         // sanity check for module presence
@@ -112,8 +115,14 @@ void pdrouting::pdroute::create_route(std::string base_mdl_name) {
         pd.len = 0;
         mdl->request(MOD_REQUEST_GET_PDIN, &pd);
 
-        if (pd.pd && (pd.len < (in.pd_offset + in.pd_len)))
+        klog(module_info, "[module_pdrouting|%s]   got pdin %p/%d\n",
+                base_mdl_name.c_str(), pd.pd, pd.len);
+
+        if (pd.pd && (pd.len > (in.pd_offset + in.pd_len)))
             in.pd = (void *)((uint8_t *)pd.pd + in.pd_offset);
+
+        klog(module_info, "[module_pdrouting|%s]   got pdin %p/%d\n",
+                base_mdl_name.c_str(), in.pd, in.pd_len);
     }
     
     // direction outputs ===========
@@ -139,8 +148,11 @@ void pdrouting::pdroute::create_route(std::string base_mdl_name) {
         pd.len = 0;
         mdl->request(MOD_REQUEST_GET_PDIN, &pd);
 
-        if (pd.pd && (pd.len < (out.pd_offset + out.pd_len)))
+        if (pd.pd && (pd.len > (out.pd_offset + out.pd_len)))
             out.pd = (void *)((uint8_t *)pd.pd + out.pd_offset);
+        
+        klog(module_info, "[module_pdrouting|%s]   got pdout %p/%d\n",
+                base_mdl_name.c_str(), out.pd, out.pd_len);
     }
     
     // add process data inspection 
