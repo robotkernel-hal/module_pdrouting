@@ -65,9 +65,9 @@ void pdrouting::mlog(robotkernel::loglevel lvl, const char *format, ...) {
  */
 pdrouting::pdroute::pdroute(const YAML::Node& node) {
     slave_id = node["slave_id"].to<uint32_t>();
-    memset(&in, 0, sizeof(in));
-    memset(&out, 0, sizeof(out));
     pd_interface_id = NULL;
+    in.pd = out.pd = NULL;
+    in.pd_len = out.pd_len = 0;
 
     const YAML::Node *in_node = node.FindValue("in");
     if (in_node) {
@@ -85,59 +85,63 @@ pdrouting::pdroute::pdroute(const YAML::Node& node) {
         out.pd_len    = (*out_node)["pd_len"].to<uint32_t>();
     }
 }
-            
+
 void pdrouting::pdroute::create_route(std::string base_mdl_name) {
     kernel& k = *kernel::get_instance();
 
     // direction inputs ===========
-    
-    // sanity check for module presence
-    module *mdl = k.get_module(in.modname.c_str());
-    if (!mdl)
-        throw robotkernel::str_exception("[module_pdrouting|%s] module name "
-                "%s not found!\n", base_mdl_name.c_str(), in.modname.c_str());
+    if (in.pd_len > 0) { 
+        // sanity check for module presence
+        module *mdl = k.get_module(in.modname.c_str());
+        if (!mdl)
+            throw robotkernel::str_exception("[module_pdrouting|%s] module name "
+                    "%s not found!\n", base_mdl_name.c_str(), in.modname.c_str());
 
-    // add to module dependecies if not already in
-    module *my_mdl = k.get_module(base_mdl_name.c_str());
-    module::depend_list_t::iterator it;
-    for (it = my_mdl->depends.begin(); it != my_mdl->depends.end(); ++it)
-        if (*it == in.modname)
-            break;
-    if (it == my_mdl->depends.end())
-        my_mdl->depends.push_back(in.modname);
+        // add to module dependecies if not already in
+        module *my_mdl = k.get_module(base_mdl_name.c_str());
+        module::depend_list_t::iterator it;
+        for (it = my_mdl->depends.begin(); it != my_mdl->depends.end(); ++it)
+            if (*it == in.modname)
+                break;
+        if (it == my_mdl->depends.end())
+            my_mdl->depends.push_back(in.modname);
 
-    process_data_t pd; 
-    pd.slave_id = in.slave_id;
-    pd.pd = NULL;
-    pd.len = 0;
-    mdl->request(MOD_REQUEST_GET_PDIN, &pd);
+        process_data_t pd; 
+        pd.slave_id = in.slave_id;
+        pd.pd = NULL;
+        pd.len = 0;
+        mdl->request(MOD_REQUEST_GET_PDIN, &pd);
 
-    if (pd.pd && (pd.len < (in.pd_offset + in.pd_len)))
-        in.pd = pd.pd;
+        if (pd.pd && (pd.len < (in.pd_offset + in.pd_len)))
+            in.pd = (void *)((uint8_t *)pd.pd + in.pd_offset);
+    }
     
     // direction outputs ===========
-    
-    // sanity check for module presence
-    mdl = k.get_module(out.modname.c_str());
-    if (!mdl)
-        throw robotkernel::str_exception("[module_pdrouting|%s] module name "
-                "%s not found!\n", base_mdl_name.c_str(), out.modname.c_str());
+    if (out.pd_len > 0) {
+        // sanity check for module presence
+        module *mdl = k.get_module(out.modname.c_str());
+        if (!mdl)
+            throw robotkernel::str_exception("[module_pdrouting|%s] module name "
+                    "%s not found!\n", base_mdl_name.c_str(), out.modname.c_str());
 
-    // add to module dependecies if not already in
-    my_mdl = k.get_module(base_mdl_name.c_str());
-    for (it = my_mdl->depends.begin(); it != my_mdl->depends.end(); ++it)
-        if (*it == out.modname)
-            break;
-    if (it == my_mdl->depends.end())
-        my_mdl->depends.push_back(out.modname);
+        // add to module dependecies if not already in
+        module *my_mdl = k.get_module(base_mdl_name.c_str());
+        module::depend_list_t::iterator it;
+        for (it = my_mdl->depends.begin(); it != my_mdl->depends.end(); ++it)
+            if (*it == out.modname)
+                break;
+        if (it == my_mdl->depends.end())
+            my_mdl->depends.push_back(out.modname);
 
-    pd.slave_id = out.slave_id;
-    pd.pd = NULL;
-    pd.len = 0;
-    mdl->request(MOD_REQUEST_GET_PDIN, &pd);
+        process_data_t pd; 
+        pd.slave_id = out.slave_id;
+        pd.pd = NULL;
+        pd.len = 0;
+        mdl->request(MOD_REQUEST_GET_PDIN, &pd);
 
-    if (pd.pd && (pd.len < (out.pd_offset + out.pd_len)))
-        out.pd = pd.pd;
+        if (pd.pd && (pd.len < (out.pd_offset + out.pd_len)))
+            out.pd = (void *)((uint8_t *)pd.pd + out.pd_offset);
+    }
     
     // add process data inspection 
     std::stringstream route_name; 
@@ -229,6 +233,23 @@ int pdrouting::request(int reqcode, void* ptr) {
             process_data_t *pd = (process_data_t *)ptr;
             pd->pd = NULL;
             pd->len = 0;
+
+            if (_routes.find(pd->slave_id) != _routes.end()) {
+                pd->pd = _routes[pd->slave_id]->in.pd;
+                pd->len = _routes[pd->slave_id]->in.pd_len;
+            }
+
+            break;
+        }
+        case MOD_REQUEST_GET_PDOUT: {            
+            process_data_t *pd = (process_data_t *)ptr;
+            pd->pd = NULL;
+            pd->len = 0;
+
+            if (_routes.find(pd->slave_id) != _routes.end()) {
+                pd->pd = _routes[pd->slave_id]->out.pd;
+                pd->len = _routes[pd->slave_id]->out.pd_len;
+            }
 
             break;
         }
