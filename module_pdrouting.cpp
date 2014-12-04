@@ -48,6 +48,12 @@
 using namespace robotkernel;
 using namespace std;
 
+//! trigger wrapper
+static void pdrouting_trigger_wrapper(void *ptr) {
+    pdrouting::pdroute *route = (pdrouting::pdroute *)ptr;
+    route->trigger_modules();
+};
+
 //! log to kernel logging facility
 void pdrouting::mlog(robotkernel::loglevel lvl, const char *format, ...) {
     char buf[1024];
@@ -123,6 +129,13 @@ void pdrouting::pdroute::create_route(std::string base_mdl_name) {
 
         klog(module_info, "[module_pdrouting|%s]   got pdin %p/%d\n",
                 base_mdl_name.c_str(), in.pd, in.pd_len);
+        
+        // add trigger callback
+        set_trigger_cb_t cb;
+        cb.cb = pdrouting_trigger_wrapper;
+        cb.hdl = this;
+        cb.clk_id = in.slave_id;
+        mdl->request(MOD_REQUEST_SET_TRIGGER_CB, &cb);
     }
     
     // direction outputs ===========
@@ -162,9 +175,25 @@ void pdrouting::pdroute::create_route(std::string base_mdl_name) {
             "libinterface_process_data_inspection.so", route_name.str().c_str(), slave_id);
 }
 
-void pdrouting::pdroute::destroy_route(std::string base_mdl_nam) {
+void pdrouting::pdroute::destroy_route(std::string base_mdl_name) {
     if (pd_interface_id)
         robotkernel::kernel::unregister_interface_cb(pd_interface_id);
+
+    if (in.pd_len > 0) { 
+        // sanity check for module presence
+        kernel& k = *kernel::get_instance();
+        module *mdl = k.get_module(in.modname.c_str());
+        if (!mdl)
+            throw robotkernel::str_exception("[module_pdrouting|%s] module name "
+                    "%s not found!\n", base_mdl_name.c_str(), in.modname.c_str());
+        
+        // remove trigger callback
+        set_trigger_cb_t cb;
+        cb.cb = pdrouting_trigger_wrapper;
+        cb.hdl = this;
+        cb.clk_id = in.slave_id;
+        mdl->request(MOD_REQUEST_UNSET_TRIGGER_CB, &cb);
+    }
 
     in.pd = NULL;
     out.pd = NULL;

@@ -34,9 +34,8 @@
 class pdrouting {
     public:
         std::string _name;          //!< module name
-        module_state_t   _state;    //!< actual module state
+        module_state_t _state;      //!< actual module state
 
-    public:
         typedef struct pdroute : public robotkernel::trigger_base {
             //! construction
             /*!
@@ -44,28 +43,32 @@ class pdrouting {
              */
             pdroute(const YAML::Node& node);
 
-            uint32_t slave_id;
+            //! create route
+            void create_route(std::string base_mdl_name);
+
+            //! destroy route
+            void destroy_route(std::string base_mdl_name);
+
+            uint32_t slave_id;          //! virtual slave id
 
             typedef struct pdinfo {
-                std::string modname;
-                uint32_t slave_id;
-                uint32_t pd_offset;
-                uint32_t pd_len;
-                void *pd;
+                std::string modname;    //! process data module name
+                uint32_t slave_id;      //! slave id in pd module
+                uint32_t pd_offset;     //! process data offset
+                uint32_t pd_len;        //! process data length
+                void *pd;               //! process data pointer
             } pdinfo_t;
 
-            pdinfo_t in;
-            pdinfo_t out;
+            pdinfo_t in;                //! process data inputs
+            pdinfo_t out;               //! process data outputs
 
-            void create_route(std::string base_mdl_nam);
-            void destroy_route(std::string base_mdl_nam);
-        
             robotkernel::kernel::interface_id_t pd_interface_id;
         } pdroute_t;
 
         typedef std::map<uint32_t, pdroute_t *> route_map_t;
         route_map_t _routes;
 
+    public:
         //! construction
         /*!
          * \param node yaml intialization node
