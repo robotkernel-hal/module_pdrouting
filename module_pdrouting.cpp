@@ -51,6 +51,10 @@ using namespace std;
 //! trigger wrapper
 static void pdrouting_trigger_wrapper(void *ptr) {
     pdrouting::pdroute *route = (pdrouting::pdroute *)ptr;
+
+    if (route->out.mdl && route->trigger)
+        route->out.mdl->trigger(route->out.slave_id);
+
     route->trigger_modules();
 };
 
@@ -72,8 +76,14 @@ void pdrouting::mlog(robotkernel::loglevel lvl, const char *format, ...) {
 pdrouting::pdroute::pdroute(const YAML::Node& node) {
     slave_id = node["slave_id"].to<uint32_t>();
     pd_interface_id = NULL;
+    trigger = false;
     in.pd = out.pd = NULL;
     in.pd_len = out.pd_len = 0;
+    in.mdl = out.mdl = NULL;
+
+    const YAML::Node *trigger_node = node.FindValue("trigger");
+    if (trigger_node)
+        trigger      = trigger_node->to<bool>();
 
     const YAML::Node *in_node = node.FindValue("in");
     if (in_node) {
@@ -101,8 +111,8 @@ void pdrouting::pdroute::create_route(std::string base_mdl_name) {
     // direction inputs ===========
     if (in.pd_len > 0) { 
         // sanity check for module presence
-        module *mdl = k.get_module(in.modname.c_str());
-        if (!mdl)
+        in.mdl = k.get_module(in.modname.c_str());
+        if (!in.mdl)
             throw robotkernel::str_exception("[module_pdrouting|%s] module name "
                     "%s not found!\n", base_mdl_name.c_str(), in.modname.c_str());
 
@@ -119,7 +129,7 @@ void pdrouting::pdroute::create_route(std::string base_mdl_name) {
         pd.slave_id = in.slave_id;
         pd.pd = NULL;
         pd.len = 0;
-        mdl->request(MOD_REQUEST_GET_PDIN, &pd);
+        in.mdl->request(MOD_REQUEST_GET_PDIN, &pd);
 
         klog(module_info, "[module_pdrouting|%s]   got pdin %p/%d\n",
                 base_mdl_name.c_str(), pd.pd, pd.len);
@@ -135,14 +145,14 @@ void pdrouting::pdroute::create_route(std::string base_mdl_name) {
         cb.cb = pdrouting_trigger_wrapper;
         cb.hdl = this;
         cb.clk_id = in.slave_id;
-        mdl->request(MOD_REQUEST_SET_TRIGGER_CB, &cb);
+        in.mdl->request(MOD_REQUEST_SET_TRIGGER_CB, &cb);
     }
     
     // direction outputs ===========
     if (out.pd_len > 0) {
         // sanity check for module presence
-        module *mdl = k.get_module(out.modname.c_str());
-        if (!mdl)
+        out.mdl = k.get_module(out.modname.c_str());
+        if (!out.mdl)
             throw robotkernel::str_exception("[module_pdrouting|%s] module name "
                     "%s not found!\n", base_mdl_name.c_str(), out.modname.c_str());
 
@@ -159,7 +169,7 @@ void pdrouting::pdroute::create_route(std::string base_mdl_name) {
         pd.slave_id = out.slave_id;
         pd.pd = NULL;
         pd.len = 0;
-        mdl->request(MOD_REQUEST_GET_PDIN, &pd);
+        out.mdl->request(MOD_REQUEST_GET_PDIN, &pd);
 
         if (pd.pd && (pd.len > (out.pd_offset + out.pd_len)))
             out.pd = (void *)((uint8_t *)pd.pd + out.pd_offset);

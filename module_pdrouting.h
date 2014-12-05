@@ -50,6 +50,7 @@ class pdrouting {
             void destroy_route(std::string base_mdl_name);
 
             uint32_t slave_id;          //! virtual slave id
+            bool trigger;               //! trigger out module on pd
 
             typedef struct pdinfo {
                 std::string modname;    //! process data module name
@@ -57,6 +58,7 @@ class pdrouting {
                 uint32_t pd_offset;     //! process data offset
                 uint32_t pd_len;        //! process data length
                 void *pd;               //! process data pointer
+                robotkernel::module *mdl;
             } pdinfo_t;
 
             pdinfo_t in;                //! process data inputs
