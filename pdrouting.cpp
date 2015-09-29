@@ -24,29 +24,22 @@
  * along with robotkernel.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "robotkernel/exceptions.h"
 #include <string_util/string_util.h>
 
-#undef BUILD_USER
-#undef BUILD_DATE
-#undef BUILD_HOST
-#undef PACKAGE
-#undef PACKAGE_NAME
-#undef PACKAGE_STRING
-#undef PACKAGE_TARNAME
-#undef PACKAGE_VERSION
-#undef VERSION
-
-#include "module_pdrouting.h"
-#include "config.h"
+#include "pdrouting.h"
+#include "robotkernel/exceptions.h"
+#include "robotkernel/helpers.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 #include <iostream>
 
+MODULE_DEF(pdrouting, module_pdrouting::pdrouting)
+
 #define min(a, b) ((a) < (b) ? (a) : (b))
 using namespace robotkernel;
 using namespace std;
+using namespace module_pdrouting;
 
 //! trigger wrapper
 static void pdrouting_trigger_wrapper(void *ptr) {
@@ -57,55 +50,39 @@ static void pdrouting_trigger_wrapper(void *ptr) {
 
     route->trigger_modules();
 };
-
-//! log to kernel logging facility
-void pdrouting::mlog(robotkernel::loglevel lvl, const char *format, ...) {
-    char buf[1024];
-
-    // format argument list
-    va_list args;
-    va_start(args, format);
-    vsnprintf(buf, 1024, format, args);
-    klog(lvl, "[module_pdrouting|%s] %s", _name.c_str(), buf);
-}
             
 //! construction
 /*!
  * \param node yaml intialization node
  */
-pdrouting::pdroute::pdroute(const YAML::Node& node) {
-    slave_id = node["slave_id"].to<uint32_t>();
-    pd_interface_id = NULL;
-    trigger = false;
+pdrouting::pdroute::pdroute(pdrouting *parent, const YAML::Node& node) 
+    : parent(parent) {
+    slave_id = get_as<uint32_t>(node, "slave_id");
+    trigger = get_as<bool>(node, "trigger", false);
     in.pd = out.pd = NULL;
     in.pd_len = out.pd_len = 0;
     in.mdl = out.mdl = NULL;
+    pd_interface_id = NULL;
 
-    const YAML::Node *trigger_node = node.FindValue("trigger");
-    if (trigger_node)
-        trigger      = trigger_node->to<bool>();
-
-    const YAML::Node *in_node = node.FindValue("in");
-    if (in_node) {
-        in.modname   = (*in_node)["modname"].to<string>();
-        in.slave_id  = (*in_node)["slave_id"].to<uint32_t>();
-        in.pd_offset = (*in_node)["pd_offset"].to<uint32_t>();
-        in.pd_len    = (*in_node)["pd_len"].to<uint32_t>();
+    if (node["in"]) {
+        in.modname   = get_as<string>(node["in"], "modname");
+        in.slave_id  = get_as<uint32_t>(node["in"], "slave_id");
+        in.pd_offset = get_as<uint32_t>(node["in"], "pd_offset");
+        in.pd_len    = get_as<uint32_t>(node["in"], "pd_len");
     }
     
-    const YAML::Node *out_node = node.FindValue("out");
-    if (out_node) {
-        out.modname   = (*out_node)["modname"].to<string>();
-        out.slave_id  = (*out_node)["slave_id"].to<uint32_t>();
-        out.pd_offset = (*out_node)["pd_offset"].to<uint32_t>();
-        out.pd_len    = (*out_node)["pd_len"].to<uint32_t>();
+    if (node["out"]) {
+        out.modname   = get_as<string>(node["out"], "modname");
+        out.slave_id  = get_as<uint32_t>(node["out"], "slave_id");
+        out.pd_offset = get_as<uint32_t>(node["out"], "pd_offset");
+        out.pd_len    = get_as<uint32_t>(node["out"], "pd_len");
     }
 }
 
 void pdrouting::pdroute::create_route(std::string base_mdl_name) {
     kernel& k = *kernel::get_instance();
 
-    klog(module_info, "[module_pdrouting|%s] creating route slave_id %d\n",
+    parent->log(info, "[module_pdrouting|%s] creating route slave_id %d\n",
             base_mdl_name.c_str(), slave_id);
 
     // direction inputs ===========
@@ -118,12 +95,12 @@ void pdrouting::pdroute::create_route(std::string base_mdl_name) {
 
         // add to module dependecies if not already in
         module *my_mdl = k.get_module(base_mdl_name.c_str());
-        module::depend_list_t::iterator it;
-        for (it = my_mdl->depends.begin(); it != my_mdl->depends.end(); ++it)
+        module::depend_list_t::const_iterator it;
+        for (it = my_mdl->get_depends().begin(); it != my_mdl->get_depends().end(); ++it)
             if (*it == in.modname)
                 break;
-        if (it == my_mdl->depends.end())
-            my_mdl->depends.push_back(in.modname);
+        if (it == my_mdl->get_depends().end())
+            my_mdl->add_depends(in.modname);
 
         process_data_t pd; 
         pd.slave_id = in.slave_id;
@@ -131,13 +108,13 @@ void pdrouting::pdroute::create_route(std::string base_mdl_name) {
         pd.len = 0;
         in.mdl->request(MOD_REQUEST_GET_PDIN, &pd);
 
-        klog(module_info, "[module_pdrouting|%s]   got pdin %p/%d\n",
+        parent->log(info, "[module_pdrouting|%s]   got pdin %p/%d\n",
                 base_mdl_name.c_str(), pd.pd, pd.len);
 
         if (pd.pd && (pd.len > (in.pd_offset + in.pd_len)))
             in.pd = (void *)((uint8_t *)pd.pd + in.pd_offset);
 
-        klog(module_info, "[module_pdrouting|%s]   got pdin %p/%d\n",
+        parent->log(info, "[module_pdrouting|%s]   got pdin %p/%d\n",
                 base_mdl_name.c_str(), in.pd, in.pd_len);
         
         // add trigger callback
@@ -158,12 +135,12 @@ void pdrouting::pdroute::create_route(std::string base_mdl_name) {
 
         // add to module dependecies if not already in
         module *my_mdl = k.get_module(base_mdl_name.c_str());
-        module::depend_list_t::iterator it;
-        for (it = my_mdl->depends.begin(); it != my_mdl->depends.end(); ++it)
+        module::depend_list_t::const_iterator it;
+        for (it = my_mdl->get_depends().begin(); it != my_mdl->get_depends().end(); ++it)
             if (*it == out.modname)
                 break;
-        if (it == my_mdl->depends.end())
-            my_mdl->depends.push_back(out.modname);
+        if (it == my_mdl->get_depends().end())
+            my_mdl->add_depends(out.modname);
 
         process_data_t pd; 
         pd.slave_id = out.slave_id;
@@ -174,15 +151,21 @@ void pdrouting::pdroute::create_route(std::string base_mdl_name) {
         if (pd.pd && (pd.len > (out.pd_offset + out.pd_len)))
             out.pd = (void *)((uint8_t *)pd.pd + out.pd_offset);
         
-        klog(module_info, "[module_pdrouting|%s]   got pdout %p/%d\n",
+        parent->log(info, "[module_pdrouting|%s]   got pdout %p/%d\n",
                 base_mdl_name.c_str(), out.pd, out.pd_len);
     }
     
     // add process data inspection 
     std::stringstream route_name; 
     route_name << "route_" << slave_id;
-    pd_interface_id = robotkernel::kernel::register_interface_cb(base_mdl_name.c_str(), 
-            "libinterface_process_data_inspection.so", route_name.str().c_str(), slave_id);
+
+    YAML::Node node;
+    node["mod_name"] = base_mdl_name;
+    node["dev_name"] = route_name.str();
+    node["slave_id"] = slave_id;
+    node["loglevel"] = (string)parent->ll;
+    pd_interface_id = robotkernel::kernel::register_interface_cb(
+            "libinterface_process_data_inspection.so", node);
 }
 
 void pdrouting::pdroute::destroy_route(std::string base_mdl_name) {
@@ -213,19 +196,24 @@ void pdrouting::pdroute::destroy_route(std::string base_mdl_name) {
 /*!
  * \param node yaml intialization node
  */
-pdrouting::pdrouting(const std::string& name, const YAML::Node& node) {
-    _name       = name;
-
+pdrouting::pdrouting(const std::string& name, const YAML::Node& node) 
+    : module_base("pdrouting", name, node) {
     for(unsigned i = 0; i < node.size(); ++i) {
-        pdroute *p = new pdroute(node[i]);
+        pdroute *p = new pdroute(this, node[i]);
         _routes[p->slave_id] = p;
     }
-
-    set_state(module_state_init);
 }
 
 //! destruction 
 pdrouting::~pdrouting() {
+    set_state(module_state_init);
+
+    route_map_t::iterator it;
+    while ((it = _routes.begin()) != _routes.end()) {
+        pdroute *r = it->second;
+        _routes.erase(it);
+        delete r;
+    }
 }
         
 //! set module state machine to defined state
@@ -242,13 +230,13 @@ int pdrouting::set_state(module_state_t state) {
         case module_state_safeop: {
             route_map_t::iterator it;
             for (it = _routes.begin(); it != _routes.end(); ++it)
-                it->second->destroy_route(_name);
+                it->second->destroy_route(name);
             break;
         }
         case module_state_op: {
             route_map_t::iterator it;
             for (it = _routes.begin(); it != _routes.end(); ++it)
-                it->second->create_route(_name);
+                it->second->create_route(name);
             break;
         }
         default:
@@ -257,17 +245,9 @@ int pdrouting::set_state(module_state_t state) {
     }
 
     if (ret == 0)
-        _state = state;
+        this->state = state;
 
     return ret;
-}
-
-//! get module state machine state
-/*!
- * \return current state
- */
-module_state_t pdrouting::get_state() {
-    return _state;
 }
 
 //! send a request to module
@@ -307,7 +287,7 @@ int pdrouting::request(int reqcode, void* ptr) {
         case MOD_REQUEST_SET_TRIGGER_CB: {
             set_trigger_cb_t *cb = (set_trigger_cb_t *)ptr;
             if (cb->cb == NULL) {
-                mlog(module_error, "ERROR could not register, callback is NULL\n");
+                log(error, "ERROR could not register, callback is NULL\n");
                 break;
             }
 
@@ -319,7 +299,7 @@ int pdrouting::request(int reqcode, void* ptr) {
             set_trigger_cb_t *cb = (set_trigger_cb_t *)ptr;
 
             if (cb->cb == NULL) {
-                mlog(module_error, "ERROR could not remove, callback is NULL\n");
+                log(error, "ERROR could not remove, callback is NULL\n");
                 break;
             }
 
@@ -334,155 +314,4 @@ int pdrouting::request(int reqcode, void* ptr) {
 
     return ret;
 }
-
-//! module trigger callback
-void pdrouting::trigger() {
-}
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-#if 0
-}
-#endif
-
-//! cyclic process data read
-/*!
-  \param hdl module handle
-  \param buf process data buffer 
-  \param bufsize size of process data buffer
-  \return size of read bytes
- */
-size_t mod_read(MODULE_HANDLE hdl, void* buf, size_t bufsize) {
-    return 0;
-}
-
-//! cyclic process data write
-/*!
-  \param hdl module handle
-  \param buf process data buffer
-  \param bufsize size of process data buffer 
-  \return size of written bytes
- */
-size_t mod_write(MODULE_HANDLE hdl, void* buf, size_t bufsize) {
-    return 0;
-}
-
-//! configures module
-/*!
-  \param name module name
-  \param config configure string
-  \return handle on success, NULL otherwise
-*/
-MODULE_HANDLE mod_configure(const char* name, const char* config) {
-    pdrouting *pdrouting_dev;
-
-    // open config
-    std::stringstream stream(config);
-    YAML::Parser parser(stream);
-    YAML::Node doc;
-
-    klog(module_info, "[module_pdrouting|%s] build by: %s@%s\n", 
-            name, BUILD_USER, BUILD_HOST);
-    klog(module_info, "[module_pdrouting|%s] build date: %s\n", 
-            name, BUILD_DATE);
-
-    if (!parser.GetNextDocument(doc)) {
-        klog(module_error, "[module_pdrouting|%s] parsing config file\n", name);
-        return (MODULE_HANDLE)NULL;
-    }
-    
-    pdrouting_dev = new pdrouting(name, doc);
-    if (!pdrouting_dev) {
-        klog(module_error, "[module_pdrouting|%s] cannot allocate memory", name);
-        return (MODULE_HANDLE)NULL;
-    }
-
-    return (MODULE_HANDLE)pdrouting_dev;
-}
-
-//! unconfigure module
-/*!
-  \param hdl module handle
-  \return success or failure
- */
-int mod_unconfigure(MODULE_HANDLE hdl) {
-    pdrouting *pdrouting_dev = (pdrouting *)hdl;
-    if (!pdrouting_dev) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    delete pdrouting_dev;
-    return 0;
-}
-
-//! set module state machine to defined state
-/*!
-  \param hdl module handle
-  \param state requested state
-  \return success or failure
- */
-int mod_set_state(MODULE_HANDLE hdl, module_state_t state) {
-    pdrouting *pdrouting_dev = (pdrouting *)hdl;
-    if (!pdrouting_dev) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    return pdrouting_dev->set_state(state);
-}
-
-//! get module state machine state
-/*!
-  \param hdl module handle
-  \return current state
- */
-module_state_t mod_get_state(MODULE_HANDLE hdl) {
-    pdrouting *pdrouting_dev = (pdrouting *)hdl;
-    if (!pdrouting_dev) {
-        errno = EINVAL;
-        return module_state_unknown;
-    }
-
-    return pdrouting_dev->get_state();
-}
-
-//! send a request to module
-/*!
-  \param hdl module handle
-  \param reqcode request code
-  \param ptr pointer to request structure
-  \return success or failure
- */
-int mod_request(MODULE_HANDLE hdl, int reqcode, void* ptr) {
-    pdrouting *pdrouting_dev = (pdrouting *)hdl;
-    if (!pdrouting_dev) {
-        errno = EINVAL;
-        return -1;
-    }
-
-    return pdrouting_dev->request(reqcode, ptr);
-}
-
-//! module trigger callback
-/*!
- * \param hdl module handle
- */
-void mod_trigger(MODULE_HANDLE hdl) {
-    pdrouting *pdrouting_dev = (pdrouting *)hdl;
-    if (!pdrouting_dev) {
-        errno = EINVAL;
-        return;
-    }
-
-    pdrouting_dev->trigger();
-}
-
-#if 0
-{
-#endif
-#ifdef __cplusplus
-}
-#endif
 
