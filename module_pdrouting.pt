@@ -1,6 +1,6 @@
 PTVERSION           = 2
 NAME                = module_pdrouting
-VERSION             = 3.1.0
+VERSION             = 4.0.0
 DESCRIPTION         = robotkernel process data routing module
   this module routes the process data from other modules
   to specific slave_id's 

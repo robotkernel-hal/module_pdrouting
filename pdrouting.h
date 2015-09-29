@@ -30,18 +30,20 @@
 #include "robotkernel/module_intf.h"
 #include "robotkernel/kernel.h"
 #include "robotkernel/trigger_base.h"
+#include "robotkernel/module_base.h"
 
-class pdrouting {
+namespace module_pdrouting {
+
+class pdrouting 
+    : public robotkernel::module_base {
     public:
-        std::string _name;          //!< module name
-        module_state_t _state;      //!< actual module state
 
         typedef struct pdroute : public robotkernel::trigger_base {
             //! construction
             /*!
              * \param node yaml intialization node
              */
-            pdroute(const YAML::Node& node);
+            pdroute(pdrouting *parent, const YAML::Node& node);
 
             //! create route
             void create_route(std::string base_mdl_name);
@@ -65,6 +67,8 @@ class pdrouting {
             pdinfo_t out;               //! process data outputs
 
             robotkernel::kernel::interface_id_t pd_interface_id;
+
+            pdrouting *parent;
         } pdroute_t;
 
         typedef std::map<uint32_t, pdroute_t *> route_map_t;
@@ -80,21 +84,12 @@ class pdrouting {
         //! destruction 
         ~pdrouting();
 
-        //! module trigger callback
-        void trigger();
-
         //! set module state machine to defined state
         /*!
          * \param state requested state
          * \return success or failure
          */
         int set_state(module_state_t state);
-
-        //! get module state machine state
-        /*!
-         * \return current state
-         */
-        module_state_t get_state();
 
         //! send a request to module
         /*!
@@ -103,10 +98,9 @@ class pdrouting {
          * \return success or failure
          */
         int request(int reqcode, void* ptr);
-
-        //! log function
-        void mlog(robotkernel::loglevel lvl, const char *format, ...);
 };
+
+}; // namespace module_pdrouting
 
 #endif // __MODULE_PDROUTING_H__
 
