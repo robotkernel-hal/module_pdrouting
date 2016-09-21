@@ -1,10 +1,10 @@
 PTVERSION           = 2
 NAME                = @PACKAGE@
-VERSION             = @PACKAGE_VERSION@
+VERSION             = @VERSION@
 DESCRIPTION         = robotkernel process data routing module
   this module routes the process data from other modules
   to specific slave_id's 
-MAINTAINER          = Robert Burger <robert.burger@dlr.de>
+MAINTAINER          = @MAINTAINER@
 DOCUMENTATION       = https://rmintra01.robotic.dlr.de/wiki/Robotkernel/module_pdrouting
 ARCHS               = @ARCHS@
 
