@@ -24,20 +24,28 @@
  * along with robotkernel.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __MODULE_PDROUTING_H__
-#define __MODULE_PDROUTING_H__
+#ifndef MODULE_PDROUTING_H
+#define MODULE_PDROUTING_H
 
-#include "robotkernel/module_intf.h"
-#include "robotkernel/kernel.h"
-#include "robotkernel/trigger_base.h"
+#include "robotkernel/module.h"
 #include "robotkernel/module_base.h"
+#include "robotkernel/kernel.h"
+#include "robotkernel/trigger.h"
+#include "robotkernel/process_data.h"
 
 namespace module_pdrouting {
+#ifdef EMACS
+}
+#endif
 
-class pdrouting 
-    : public robotkernel::module_base {
+class pdrouting :
+	public std::enable_shared_from_this<pdrouting>,
+  public robotkernel::module_base,
+	public robotkernel::pd_provider,
+	public robotkernel::pd_consumer
+	public service_provider::process_data_inspection::base
+{
     public:
-
         typedef struct pdroute : public robotkernel::trigger_base {
             //! construction
             /*!
@@ -102,5 +110,5 @@ class pdrouting
 
 }; // namespace module_pdrouting
 
-#endif // __MODULE_PDROUTING_H__
+#endif // MODULE_PDROUTING_H
 
