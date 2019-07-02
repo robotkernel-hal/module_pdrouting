@@ -56,6 +56,7 @@ pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Nod
         - { name: right, len: 8 }
     */
 
+    name = get_as<string>(node, "name");
     pdin.name = get_as<string>(node, "pd_input_device");
 
     for (const auto& output_node : node["outputs"]) {
@@ -73,7 +74,7 @@ void pdrouting::pd_demux::start() {
 
     for (auto& output : outputs) {
         string pd_desc = format_string("- uint8_t[%d]: data\n", output.len);
-        string tmp = format_string("%s.%s", parent->name.c_str(), output.name.c_str());
+        string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), output.name.c_str());
         output.pdtr  = make_shared<trigger>(tmp, "inputs");
         output.pdout = make_shared<triple_buffer>(output.len, tmp, string("inputs"), pd_desc, output.pdtr->id());
         output.hash  = output.pdout->set_provider(shared_from_this());
@@ -137,6 +138,7 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
     */
 
     pdout.name = get_as<string>(node, "pd_output_device");
+    name = get_as<string>(node, "name");
     trigger_name = get_as<string>(node, "trigger_name");
 
     for (const auto& input_node : node["inputs"]) {
@@ -154,7 +156,7 @@ void pdrouting::pd_mux::start() {
 
     for (auto& input : inputs) {
         string pd_desc = format_string("- uint8_t[%d]: data\n", input.len);
-        string tmp = format_string("%s.%s", parent->name.c_str(), input.name.c_str());
+        string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), input.name.c_str());
         input.pdtr  = make_shared<trigger>(tmp, "outputs");
         input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc, input.pdtr->id());
         input.hash  = input.pdin->set_consumer(shared_from_this());

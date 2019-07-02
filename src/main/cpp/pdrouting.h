@@ -80,6 +80,7 @@ class pdrouting :
             private:
                 std::shared_ptr<pdrouting> parent;
                 std::list<output> outputs;
+                std::string name; 
 
                 struct {
                     std::string                     name;
@@ -142,6 +143,7 @@ class pdrouting :
                     robotkernel::sp_process_data_t  dev;
                 } pdout;
 
+                std::string name; 
                 std::string trigger_name;
                     
             public:
@@ -170,7 +172,7 @@ class pdrouting :
         typedef std::list<sp_pd_demux_t> demux_list_t;
         demux_list_t demux;
         
-				typedef std::shared_ptr<pd_mux> sp_pd_mux_t;
+        typedef std::shared_ptr<pd_mux> sp_pd_mux_t;
         typedef std::list<sp_pd_mux_t> mux_list_t;
         mux_list_t mux;
 
