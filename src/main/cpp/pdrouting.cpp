@@ -150,14 +150,14 @@ void pdrouting::pd_mux::start() {
     kernel& k = *kernel::get_instance();
 
     pdout.dev  = k.get_process_data(pdout.name);
-    pdout.hash = pdout.dev->set_consumer(shared_from_this());
+    pdout.hash = pdout.dev->set_provider(shared_from_this());
 
     for (auto& input : inputs) {
         string pd_desc = format_string("- uint8_t[%d]: data\n", input.len);
         string tmp = format_string("%s.%s", parent->name.c_str(), input.name.c_str());
         input.pdtr  = make_shared<trigger>(tmp, "outputs");
         input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc, input.pdtr->id());
-        input.hash  = input.pdin->set_provider(shared_from_this());
+        input.hash  = input.pdin->set_consumer(shared_from_this());
 
         k.add_device(input.pdtr);
         k.add_device(input.pdin);
@@ -185,7 +185,7 @@ void pdrouting::pd_mux::stop() {
         input.hash  = 0;
     }
     
-    pdout.dev->reset_consumer(pdout.hash);
+    pdout.dev->reset_provider(pdout.hash);
     pdout.hash = 0;
     pdout.dev  = nullptr;
 }
@@ -193,7 +193,6 @@ void pdrouting::pd_mux::stop() {
 //! trigger tick
 void pdrouting::pd_mux::tick() {
     off_t pos = 0;
-    auto buf = pdout.dev->next(pdout.hash);
 
     for (auto& input : inputs) {
         auto buf = input.pdin->pop(input.hash);
@@ -226,6 +225,13 @@ void pdrouting::init() {
             demux.push_back(d);
         }
     }
+    
+    if (config["mux"]) {
+        for (const auto& mux_node : config["mux"]) {
+            auto d = std::make_shared<pd_mux>(shared_from_this(), mux_node);
+            mux.push_back(d);
+        }
+    }
 }
         
 //! set module state machine to defined state
@@ -234,8 +240,6 @@ void pdrouting::init() {
  * \return success or failure
  */
 int pdrouting::set_state(module_state_t state) {
-    kernel& k = *kernel::get_instance();
-
     // get transition
     uint32_t transition = GEN_STATE(this->state, state);
 
@@ -249,6 +253,9 @@ int pdrouting::set_state(module_state_t state) {
                 d->stop();
             }
 
+            for (auto& d : mux) {
+                d->stop();
+            }
             if (state == module_state_safeop)
                 break;
         case safeop_2_preop:
@@ -291,6 +298,9 @@ int pdrouting::set_state(module_state_t state) {
                 d->start();
             }
 
+            for (auto& d : mux) {
+                d->start();
+            }
             break;
         }
         case op_2_op:

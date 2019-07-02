@@ -110,7 +110,8 @@ class pdrouting :
         };
         
         class pd_mux : 
-            public std::enable_shared_from_this<pd_demux>,
+            public std::enable_shared_from_this<pd_mux>,
+            public robotkernel::trigger_base,
             public robotkernel::pd_provider,
             public robotkernel::pd_consumer,
             public service_provider::process_data_inspection::base
@@ -168,6 +169,10 @@ class pdrouting :
         typedef std::shared_ptr<pd_demux> sp_pd_demux_t;
         typedef std::list<sp_pd_demux_t> demux_list_t;
         demux_list_t demux;
+        
+				typedef std::shared_ptr<pd_mux> sp_pd_mux_t;
+        typedef std::list<sp_pd_mux_t> mux_list_t;
+        mux_list_t mux;
 
         YAML::Node config;
     public:
