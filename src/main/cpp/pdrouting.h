@@ -1,8 +1,6 @@
 //! robotkernel module pdrouting
 /*!
  * author: Robert Burger
- *
- * $Id$
  */
 
 // vim: tabstop=4 softtabstop=4 shiftwidth=4 expandtab:
@@ -33,55 +31,108 @@
 #include "robotkernel/trigger.h"
 #include "robotkernel/process_data.h"
 
+#include "service_provider/process_data_inspection/base.h"
+
 namespace module_pdrouting {
 #ifdef EMACS
 }
 #endif
 
 class pdrouting :
-	public std::enable_shared_from_this<pdrouting>,
-  public robotkernel::module_base,
-	public robotkernel::pd_provider,
-	public robotkernel::pd_consumer
-	public service_provider::process_data_inspection::base
+    public std::enable_shared_from_this<pdrouting>,
+    public robotkernel::module_base
 {
     public:
-        typedef struct pdroute : public robotkernel::trigger_base {
-            //! construction
-            /*!
-             * \param node yaml intialization node
-             */
-            pdroute(pdrouting *parent, const YAML::Node& node);
+        /*
+         *  demux:
+         *      pd_input_device: <name>
+         *      outputs:
+         *      -   name: left
+         *          len: 8
+         *      -   name: right
+         *          len: 8
+         *
+         *
+         */
 
-            //! create route
-            void create_route(std::string base_mdl_name);
+        class pd_demux : 
+            public std::enable_shared_from_this<pd_demux>,
+            public robotkernel::pd_provider,
+            public robotkernel::pd_consumer,
+            public service_provider::process_data_inspection::base
+        {
+            public:
+                class output {
+                    public: 
+                        output(std::shared_ptr<pdrouting> parent,
+                                const std::string& name, const uint32_t& len) :
+                            name(name), len(len), pdout(nullptr), pdtr(nullptr), parent(parent)
+                        {
+                        }
 
-            //! destroy route
-            void destroy_route(std::string base_mdl_name);
+                        std::string name;
+                        uint32_t len;
+                        robotkernel::sp_process_data_t pdout;
+                        robotkernel::sp_trigger_t      pdtr;
+                        ssize_t hash;
+            
+                        std::shared_ptr<pdrouting> parent;
+                };
 
-            uint32_t slave_id;          //! virtual slave id
-            bool trigger;               //! trigger out module on pd
+            private:
+                std::shared_ptr<pdrouting> parent;
+                std::list<output> outputs;
+                std::string pd_input_device_name;
 
-            typedef struct pdinfo {
-                std::string modname;    //! process data module name
-                uint32_t slave_id;      //! slave id in pd module
-                uint32_t pd_offset;     //! process data offset
-                uint32_t pd_len;        //! process data length
-                void *pd;               //! process data pointer
-                robotkernel::module *mdl;
-            } pdinfo_t;
 
-            pdinfo_t in;                //! process data inputs
-            pdinfo_t out;               //! process data outputs
+            public:
+                //! construction
+                /*!
+                 * \param node yaml intialization node
+                 */
+                pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Node& node);
+                ~pd_demux() {};
 
-            robotkernel::kernel::interface_id_t pd_interface_id;
+                //! creating process data output and trigger
+                void start();
 
-            pdrouting *parent;
-        } pdroute_t;
+                //! destroying process data output and trigger
+                void stop();
 
-        typedef std::map<uint32_t, pdroute_t *> route_map_t;
-        route_map_t _routes;
+                // process data inspection
+                void get_pdin(service_provider::process_data_inspection::pd_t& pd) {};
+                void get_pdout(service_provider::process_data_inspection::pd_t& pd) {};
+//            //! create route
+//            void create_route(std::string base_mdl_name);
+//
+//            //! destroy route
+//            void destroy_route(std::string base_mdl_name);
+//
+//            uint32_t slave_id;          //! virtual slave id
+//            bool trigger;               //! trigger out module on pd
+//
+//            typedef struct pdinfo {
+//                std::string modname;    //! process data module name
+//                uint32_t slave_id;      //! slave id in pd module
+//                uint32_t pd_offset;     //! process data offset
+//                uint32_t pd_len;        //! process data length
+//                void *pd;               //! process data pointer
+//                robotkernel::module *mdl;
+//            } pdinfo_t;
+//
+//            pdinfo_t in;                //! process data inputs
+//            pdinfo_t out;               //! process data outputs
+//
+//            robotkernel::kernel::interface_id_t pd_interface_id;
+//
+//            pdrouting *parent;
+        };
 
+        typedef std::shared_ptr<pd_demux> sp_pd_demux_t;
+        typedef std::list<sp_pd_demux_t> demux_list_t;
+        demux_list_t demux;
+
+        YAML::Node config;
     public:
         //! construction
         /*!
@@ -92,22 +143,20 @@ class pdrouting :
         //! destruction 
         ~pdrouting();
 
+        //! initializaion
+        void init();
+
         //! set module state machine to defined state
         /*!
          * \param state requested state
          * \return success or failure
          */
         int set_state(module_state_t state);
-
-        //! send a request to module
-        /*!
-         * \param reqcode request code
-         * \param ptr pointer to request structure
-         * \return success or failure
-         */
-        int request(int reqcode, void* ptr);
 };
 
+#ifdef EMACS
+{
+#endif
 }; // namespace module_pdrouting
 
 #endif // MODULE_PDROUTING_H
