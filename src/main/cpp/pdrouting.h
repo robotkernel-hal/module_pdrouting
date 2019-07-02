@@ -57,6 +57,7 @@ class pdrouting :
 
         class pd_demux : 
             public std::enable_shared_from_this<pd_demux>,
+            public robotkernel::trigger_base,
             public robotkernel::pd_provider,
             public robotkernel::pd_consumer,
             public service_provider::process_data_inspection::base
@@ -64,9 +65,8 @@ class pdrouting :
             public:
                 class output {
                     public: 
-                        output(std::shared_ptr<pdrouting> parent,
-                                const std::string& name, const uint32_t& len) :
-                            name(name), len(len), pdout(nullptr), pdtr(nullptr), parent(parent)
+                        output(const std::string& name, const uint32_t& len) :
+                            name(name), len(len), pdout(nullptr), pdtr(nullptr)
                         {
                         }
 
@@ -75,15 +75,17 @@ class pdrouting :
                         robotkernel::sp_process_data_t pdout;
                         robotkernel::sp_trigger_t      pdtr;
                         ssize_t hash;
-            
-                        std::shared_ptr<pdrouting> parent;
                 };
 
             private:
                 std::shared_ptr<pdrouting> parent;
                 std::list<output> outputs;
-                std::string pd_input_device_name;
 
+                struct {
+                    std::string                     name;
+                    ssize_t                         hash;
+                    robotkernel::sp_process_data_t  dev;
+                } pdin;
 
             public:
                 //! construction
@@ -99,33 +101,68 @@ class pdrouting :
                 //! destroying process data output and trigger
                 void stop();
 
+                //! trigger tick
+                void tick();                
+                
                 // process data inspection
                 void get_pdin(service_provider::process_data_inspection::pd_t& pd) {};
                 void get_pdout(service_provider::process_data_inspection::pd_t& pd) {};
-//            //! create route
-//            void create_route(std::string base_mdl_name);
-//
-//            //! destroy route
-//            void destroy_route(std::string base_mdl_name);
-//
-//            uint32_t slave_id;          //! virtual slave id
-//            bool trigger;               //! trigger out module on pd
-//
-//            typedef struct pdinfo {
-//                std::string modname;    //! process data module name
-//                uint32_t slave_id;      //! slave id in pd module
-//                uint32_t pd_offset;     //! process data offset
-//                uint32_t pd_len;        //! process data length
-//                void *pd;               //! process data pointer
-//                robotkernel::module *mdl;
-//            } pdinfo_t;
-//
-//            pdinfo_t in;                //! process data inputs
-//            pdinfo_t out;               //! process data outputs
-//
-//            robotkernel::kernel::interface_id_t pd_interface_id;
-//
-//            pdrouting *parent;
+        };
+        
+        class pd_mux : 
+            public std::enable_shared_from_this<pd_demux>,
+            public robotkernel::pd_provider,
+            public robotkernel::pd_consumer,
+            public service_provider::process_data_inspection::base
+        {
+            public:
+                class input {
+                    public: 
+                        input(const std::string& name, const uint32_t& len) :
+                            name(name), len(len), 
+                            pdin(nullptr), pdtr(nullptr)
+                        {
+                        }
+
+                        std::string name;
+                        uint32_t len;
+                        robotkernel::sp_process_data_t pdin;
+                        robotkernel::sp_trigger_t      pdtr;
+                        ssize_t hash;
+                };
+
+            private:
+                std::shared_ptr<pdrouting> parent;
+                std::list<input> inputs;
+
+                struct {
+                    std::string                     name;
+                    ssize_t                         hash;
+                    robotkernel::sp_process_data_t  dev;
+                } pdout;
+
+                std::string trigger_name;
+                    
+            public:
+                //! construction
+                /*!
+                 * \param node yaml intialization node
+                 */
+                pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& node);
+                ~pd_mux() {};
+
+                //! creating process data output and trigger
+                void start();
+
+                //! destroying process data output and trigger
+                void stop();
+
+                //! trigger tick
+                void tick();                
+                
+                // process data inspection
+                void get_pdin(service_provider::process_data_inspection::pd_t& pd) {};
+                void get_pdout(service_provider::process_data_inspection::pd_t& pd) {};
         };
 
         typedef std::shared_ptr<pd_demux> sp_pd_demux_t;
