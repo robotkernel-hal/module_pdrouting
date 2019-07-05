@@ -50,6 +50,7 @@ pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Nod
 {
     /* we will get sth like:
       
+        name: first_demux
         pd_input_device: <name>
         outputs:
         - { name: left, len: 8 }
@@ -130,6 +131,7 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
 {
     /* we will get sth like:
       
+        name: first_mux
         pd_output_device: <name>
         trigger_name: <modname>.left.outputs.trigger
         inputs:
