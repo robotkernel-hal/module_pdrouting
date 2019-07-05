@@ -73,6 +73,14 @@ void pdrouting::pd_demux::start() {
     pdin.dev  = k.get_process_data(pdin.name);
     pdin.hash = pdin.dev->set_consumer(shared_from_this());
 
+    size_t act_len = 0;
+    for (auto& output : outputs)
+        act_len += output.len;
+
+    if (act_len > pdin.dev->length)
+        throw str_exception("demuxer %s length mismatch: pd %s has %u bytes, "
+                "we need %u bytes\n", name.c_str(), pdin.name.c_str(), pdin.dev->length, act_len);
+
     for (auto& output : outputs) {
         string pd_desc = format_string("- uint8_t[%d]: data\n", output.len);
         string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), output.name.c_str());
@@ -94,7 +102,7 @@ void pdrouting::pd_demux::stop() {
     
     auto trigger_dev = k.get_trigger(pdin.dev->clk_device);
     trigger_dev->remove_trigger(shared_from_this());
-
+    
     for (auto& output : outputs) {
         k.remove_device(output.pdout);
         k.remove_device(output.pdtr);
@@ -155,6 +163,14 @@ void pdrouting::pd_mux::start() {
 
     pdout.dev  = k.get_process_data(pdout.name);
     pdout.hash = pdout.dev->set_provider(shared_from_this());
+
+    size_t act_len = 0;
+    for (auto& input : inputs)
+        act_len += input.len;
+
+    if (act_len > pdout.dev->length)
+        throw str_exception("muxer %s length mismatch: pd %s has %u bytes, "
+                "we need %u bytes\n", name.c_str(), pdout.name.c_str(), pdout.dev->length, act_len);
 
     for (auto& input : inputs) {
         string pd_desc = format_string("- uint8_t[%d]: data\n", input.len);
