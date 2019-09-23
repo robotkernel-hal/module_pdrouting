@@ -198,14 +198,23 @@ void pdrouting::pd_mux::stop() {
         k.remove_device(input.pdin);
         k.remove_device(input.pdtr);
 
-        input.pdin->reset_provider(input.hash);
+        try {
+            input.pdin->reset_consumer(input.hash);
+        } catch (exception& e) {
+            parent->log(warning, "reseting consumer failed, ignoring: %s\n", e.what()); 
+        }
 
         input.pdin  = nullptr;
         input.pdtr  = nullptr;
         input.hash  = 0;
     }
     
-    pdout.dev->reset_provider(pdout.hash);
+    try {
+        pdout.dev->reset_provider(pdout.hash);
+    } catch (exception& e) {
+        parent->log(warning, "reseting provider failed, ignoring: %s\n", e.what()); 
+    }
+
     pdout.hash = 0;
     pdout.dev  = nullptr;
 }
