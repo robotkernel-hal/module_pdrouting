@@ -107,14 +107,23 @@ void pdrouting::pd_demux::stop() {
         k.remove_device(output.pdout);
         k.remove_device(output.pdtr);
 
-        output.pdout->reset_provider(output.hash);
+        try {
+            output.pdout->reset_provider(output.hash);
+        } catch (exception& e) {
+            parent->log(warning, "reseting provider failed, ignoring: %s\n", e.what()); 
+        }
 
         output.pdout = nullptr;
         output.pdtr  = nullptr;
         output.hash  = 0;
     }
     
-    pdin.dev->reset_consumer(pdin.hash);
+    try {
+        pdin.dev->reset_consumer(pdin.hash);
+    } catch (exception& e) {
+        parent->log(warning, "reseting consumer failed, ignoring: %s\n", e.what()); 
+    }
+
     pdin.hash = 0;
     pdin.dev  = nullptr;
 }
