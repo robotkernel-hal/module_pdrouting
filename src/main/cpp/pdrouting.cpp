@@ -40,179 +40,235 @@ MODULE_DEF(pdrouting, module_pdrouting::pdrouting)
 using namespace robotkernel;
 using namespace std;
 using namespace module_pdrouting;
+using namespace string_util;
 
-//! trigger wrapper
-static void pdrouting_trigger_wrapper(void *ptr) {
-    pdrouting::pdroute *route = (pdrouting::pdroute *)ptr;
+pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Node& node) :
+    pd_provider(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
+    pd_consumer(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
+    service_provider::process_data_inspection::base(parent->name, get_as<string>(node, "name")),
+    parent(parent)
+{
+    /* we will get sth like:
+      
+        name: first_demux
+        pd_input_device: <name>
+        outputs:
+        - { name: left, len: 8 }
+        - { name: right, len: 8 }
+    */
 
-    if (route->out.mdl && route->trigger)
-        route->out.mdl->trigger(route->out.slave_id);
+    name = get_as<string>(node, "name");
+    pdin.name = get_as<string>(node, "pd_input_device");
 
-    route->trigger_modules();
-};
-            
-//! construction
-/*!
- * \param node yaml intialization node
- */
-pdrouting::pdroute::pdroute(pdrouting *parent, const YAML::Node& node) 
-    : parent(parent) {
-    slave_id = get_as<uint32_t>(node, "slave_id");
-    trigger = get_as<bool>(node, "trigger", false);
-    in.pd = out.pd = NULL;
-    in.pd_len = out.pd_len = 0;
-    in.mdl = out.mdl = NULL;
-    pd_interface_id = NULL;
-
-    if (node["in"]) {
-        in.modname   = get_as<string>(node["in"], "modname");
-        in.slave_id  = get_as<uint32_t>(node["in"], "slave_id");
-        in.pd_offset = get_as<uint32_t>(node["in"], "pd_offset");
-        in.pd_len    = get_as<uint32_t>(node["in"], "pd_len");
-    }
-    
-    if (node["out"]) {
-        out.modname   = get_as<string>(node["out"], "modname");
-        out.slave_id  = get_as<uint32_t>(node["out"], "slave_id");
-        out.pd_offset = get_as<uint32_t>(node["out"], "pd_offset");
-        out.pd_len    = get_as<uint32_t>(node["out"], "pd_len");
+    for (const auto& output_node : node["outputs"]) {
+        outputs.push_back(output(get_as<string>(output_node, "name"), 
+                    get_as<uint32_t>(output_node, "len")));
     }
 }
-
-void pdrouting::pdroute::create_route(std::string base_mdl_name) {
+                        
+//! creating process data output and trigger
+void pdrouting::pd_demux::start() {
     kernel& k = *kernel::get_instance();
 
-    parent->log(info, "[module_pdrouting|%s] creating route slave_id %d\n",
-            base_mdl_name.c_str(), slave_id);
+    pdin.dev  = k.get_process_data(pdin.name);
+    pdin.hash = pdin.dev->set_consumer(shared_from_this());
 
-    // direction inputs ===========
-    if (in.pd_len > 0) { 
-        // sanity check for module presence
-        in.mdl = k.get_module(in.modname.c_str());
-        if (!in.mdl)
-            throw robotkernel::str_exception("[module_pdrouting|%s] module name "
-                    "%s not found!\n", base_mdl_name.c_str(), in.modname.c_str());
+    size_t act_len = 0;
+    for (auto& output : outputs)
+        act_len += output.len;
 
-        // add to module dependecies if not already in
-        module *my_mdl = k.get_module(base_mdl_name.c_str());
-        module::depend_list_t::const_iterator it;
-        for (it = my_mdl->get_depends().begin(); it != my_mdl->get_depends().end(); ++it)
-            if (*it == in.modname)
-                break;
-        if (it == my_mdl->get_depends().end())
-            my_mdl->add_depends(in.modname);
+    if (act_len > pdin.dev->length)
+        throw str_exception("demuxer %s length mismatch: pd %s has %u bytes, "
+                "we need %u bytes\n", name.c_str(), pdin.name.c_str(), pdin.dev->length, act_len);
 
-        process_data_t pd; 
-        pd.slave_id = in.slave_id;
-        pd.pd = NULL;
-        pd.len = 0;
-        in.mdl->request(MOD_REQUEST_GET_PDIN, &pd);
+    for (auto& output : outputs) {
+        string pd_desc = format_string("- uint8_t[%d]: data\n", output.len);
+        string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), output.name.c_str());
+        output.pdtr  = make_shared<trigger>(tmp, "inputs");
+        output.pdout = make_shared<triple_buffer>(output.len, tmp, string("inputs"), pd_desc, output.pdtr->id());
+        output.hash  = output.pdout->set_provider(shared_from_this());
 
-        parent->log(info, "[module_pdrouting|%s]   got pdin %p/%d\n",
-                base_mdl_name.c_str(), pd.pd, pd.len);
-
-        if (pd.pd && (pd.len > (in.pd_offset + in.pd_len)))
-            in.pd = (void *)((uint8_t *)pd.pd + in.pd_offset);
-
-        parent->log(info, "[module_pdrouting|%s]   got pdin %p/%d\n",
-                base_mdl_name.c_str(), in.pd, in.pd_len);
-        
-        // add trigger callback
-        set_trigger_cb_t cb;
-        cb.cb = pdrouting_trigger_wrapper;
-        cb.hdl = this;
-        cb.clk_id = in.slave_id;
-        in.mdl->request(MOD_REQUEST_SET_TRIGGER_CB, &cb);
+        k.add_device(output.pdtr);
+        k.add_device(output.pdout);
     }
-    
-    // direction outputs ===========
-    if (out.pd_len > 0) {
-        // sanity check for module presence
-        out.mdl = k.get_module(out.modname.c_str());
-        if (!out.mdl)
-            throw robotkernel::str_exception("[module_pdrouting|%s] module name "
-                    "%s not found!\n", base_mdl_name.c_str(), out.modname.c_str());
 
-        // add to module dependecies if not already in
-        module *my_mdl = k.get_module(base_mdl_name.c_str());
-        module::depend_list_t::const_iterator it;
-        for (it = my_mdl->get_depends().begin(); it != my_mdl->get_depends().end(); ++it)
-            if (*it == out.modname)
-                break;
-        if (it == my_mdl->get_depends().end())
-            my_mdl->add_depends(out.modname);
-
-        process_data_t pd; 
-        pd.slave_id = out.slave_id;
-        pd.pd = NULL;
-        pd.len = 0;
-        out.mdl->request(MOD_REQUEST_GET_PDIN, &pd);
-
-        if (pd.pd && (pd.len > (out.pd_offset + out.pd_len)))
-            out.pd = (void *)((uint8_t *)pd.pd + out.pd_offset);
-        
-        parent->log(info, "[module_pdrouting|%s]   got pdout %p/%d\n",
-                base_mdl_name.c_str(), out.pd, out.pd_len);
-    }
-    
-    // add process data inspection 
-    std::stringstream route_name; 
-    route_name << "route_" << slave_id;
-
-    YAML::Node node;
-    node["mod_name"] = base_mdl_name;
-    node["dev_name"] = route_name.str();
-    node["slave_id"] = slave_id;
-    node["loglevel"] = (string)parent->ll;
-    pd_interface_id = robotkernel::kernel::register_interface_cb(
-            "libinterface_process_data_inspection.so", node);
+    auto trigger_dev = k.get_trigger(pdin.dev->clk_device);
+    trigger_dev->add_trigger(shared_from_this());
 }
 
-void pdrouting::pdroute::destroy_route(std::string base_mdl_name) {
-    if (pd_interface_id)
-        robotkernel::kernel::unregister_interface_cb(pd_interface_id);
+//! destroying process data output and trigger
+void pdrouting::pd_demux::stop() {
+    kernel& k = *kernel::get_instance();
+    
+    auto trigger_dev = k.get_trigger(pdin.dev->clk_device);
+    trigger_dev->remove_trigger(shared_from_this());
+    
+    for (auto& output : outputs) {
+        k.remove_device(output.pdout);
+        k.remove_device(output.pdtr);
 
-    if (in.pd_len > 0) { 
-        // sanity check for module presence
-        kernel& k = *kernel::get_instance();
-        module *mdl = k.get_module(in.modname.c_str());
-        if (!mdl)
-            throw robotkernel::str_exception("[module_pdrouting|%s] module name "
-                    "%s not found!\n", base_mdl_name.c_str(), in.modname.c_str());
-        
-        // remove trigger callback
-        set_trigger_cb_t cb;
-        cb.cb = pdrouting_trigger_wrapper;
-        cb.hdl = this;
-        cb.clk_id = in.slave_id;
-        mdl->request(MOD_REQUEST_UNSET_TRIGGER_CB, &cb);
+        try {
+            output.pdout->reset_provider(output.hash);
+        } catch (exception& e) {
+            parent->log(warning, "reseting provider failed, ignoring: %s\n", e.what()); 
+        }
+
+        output.pdout = nullptr;
+        output.pdtr  = nullptr;
+        output.hash  = 0;
+    }
+    
+    try {
+        pdin.dev->reset_consumer(pdin.hash);
+    } catch (exception& e) {
+        parent->log(warning, "reseting consumer failed, ignoring: %s\n", e.what()); 
     }
 
-    in.pd = NULL;
-    out.pd = NULL;
+    pdin.hash = 0;
+    pdin.dev  = nullptr;
+}
+                
+//! trigger tick
+void pdrouting::pd_demux::tick() {
+    off_t pos = 0;
+    auto buf = pdin.dev->pop(pdin.hash);
+
+    for (auto& output : outputs) {
+        output.pdout->write(output.hash, 0, &buf[pos], output.len);
+        output.pdtr->trigger_modules();
+        pos += output.len;
+    }
+}
+
+pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& node) :
+    pd_provider(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
+    pd_consumer(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
+    service_provider::process_data_inspection::base(parent->name, get_as<string>(node, "name")),
+    parent(parent)
+{
+    /* we will get sth like:
+      
+        name: first_mux
+        pd_output_device: <name>
+        trigger_name: <modname>.left.outputs.trigger
+        inputs:
+        - { name: left, len: 8 }
+        - { name: right, len: 8 }
+    */
+
+    pdout.name = get_as<string>(node, "pd_output_device");
+    name = get_as<string>(node, "name");
+    trigger_name = get_as<string>(node, "trigger_name");
+
+    for (const auto& input_node : node["inputs"]) {
+        inputs.push_back(input(get_as<string>(input_node, "name"), 
+                    get_as<uint32_t>(input_node, "len")));
+    }
+}
+                        
+//! creating process data input and trigger
+void pdrouting::pd_mux::start() {
+    kernel& k = *kernel::get_instance();
+
+    pdout.dev  = k.get_process_data(pdout.name);
+    pdout.hash = pdout.dev->set_provider(shared_from_this());
+
+    size_t act_len = 0;
+    for (auto& input : inputs)
+        act_len += input.len;
+
+    if (act_len > pdout.dev->length)
+        throw str_exception("muxer %s length mismatch: pd %s has %u bytes, "
+                "we need %u bytes\n", name.c_str(), pdout.name.c_str(), pdout.dev->length, act_len);
+
+    for (auto& input : inputs) {
+        string pd_desc = format_string("- uint8_t[%d]: data\n", input.len);
+        string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), input.name.c_str());
+        input.pdtr  = make_shared<trigger>(tmp, "outputs");
+        input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc, input.pdtr->id());
+        input.hash  = input.pdin->set_consumer(shared_from_this());
+
+        k.add_device(input.pdtr);
+        k.add_device(input.pdin);
+    }
+    
+    auto trigger_dev = k.get_trigger(trigger_name);
+    trigger_dev->add_trigger(shared_from_this());
+}
+
+//! destroying process data input and trigger
+void pdrouting::pd_mux::stop() {
+    kernel& k = *kernel::get_instance();
+    
+    auto trigger_dev = k.get_trigger(trigger_name);
+    trigger_dev->remove_trigger(shared_from_this());
+    
+    for (auto& input : inputs) {
+        k.remove_device(input.pdin);
+        k.remove_device(input.pdtr);
+
+        try {
+            input.pdin->reset_consumer(input.hash);
+        } catch (exception& e) {
+            parent->log(warning, "reseting consumer failed, ignoring: %s\n", e.what()); 
+        }
+
+        input.pdin  = nullptr;
+        input.pdtr  = nullptr;
+        input.hash  = 0;
+    }
+    
+    try {
+        pdout.dev->reset_provider(pdout.hash);
+    } catch (exception& e) {
+        parent->log(warning, "reseting provider failed, ignoring: %s\n", e.what()); 
+    }
+
+    pdout.hash = 0;
+    pdout.dev  = nullptr;
+}
+                
+//! trigger tick
+void pdrouting::pd_mux::tick() {
+    off_t pos = 0;
+
+    for (auto& input : inputs) {
+        auto buf = input.pdin->pop(input.hash);
+        pdout.dev->write(pdout.hash, pos, buf, input.len, false);
+        pos += input.len;
+    }
+
+    pdout.dev->push(pdout.hash);
 }
 
 //! construction
 /*!
  * \param node yaml intialization node
  */
-pdrouting::pdrouting(const std::string& name, const YAML::Node& node) 
-    : module_base("pdrouting", name, node) {
-    for(unsigned i = 0; i < node.size(); ++i) {
-        pdroute *p = new pdroute(this, node[i]);
-        _routes[p->slave_id] = p;
-    }
+pdrouting::pdrouting(const std::string& name, const YAML::Node& node) : 
+    module_base("module_pdrouting", name, node)
+{
+    config = YAML::Clone(node);
 }
 
 //! destruction 
 pdrouting::~pdrouting() {
     set_state(module_state_init);
+}
 
-    route_map_t::iterator it;
-    while ((it = _routes.begin()) != _routes.end()) {
-        pdroute *r = it->second;
-        _routes.erase(it);
-        delete r;
+void pdrouting::init() {
+    if (config["demux"]) {
+        for (const auto& demux_node : config["demux"]) {
+            auto d = std::make_shared<pd_demux>(shared_from_this(), demux_node);
+            demux.push_back(d);
+        }
+    }
+    
+    if (config["mux"]) {
+        for (const auto& mux_node : config["mux"]) {
+            auto d = std::make_shared<pd_mux>(shared_from_this(), mux_node);
+            mux.push_back(d);
+        }
     }
 }
         
@@ -222,96 +278,80 @@ pdrouting::~pdrouting() {
  * \return success or failure
  */
 int pdrouting::set_state(module_state_t state) {
-    int ret = 0;
+    // get transition
+    uint32_t transition = GEN_STATE(this->state, state);
 
-    switch (state) {
-        case module_state_init:
-        case module_state_preop: 
-        case module_state_safeop: {
-            route_map_t::iterator it;
-            for (it = _routes.begin(); it != _routes.end(); ++it)
-                it->second->destroy_route(name);
+    switch (transition) {
+        case op_2_safeop:
+        case op_2_preop:
+        case op_2_init:
+        case op_2_boot:
+            // ====> stop sending commands
+            for (auto& d : demux) {
+                d->stop();
+            }
+
+            for (auto& d : mux) {
+                d->stop();
+            }
+            if (state == module_state_safeop)
+                break;
+        case safeop_2_preop:
+        case safeop_2_init:
+        case safeop_2_boot:
+            // ====> stop receiving measurements
+            if (state == module_state_preop)
+                break;
+        case preop_2_init:
+        case preop_2_boot:
+            // ====> deinit devices
+        case init_2_init:
+            // ====> re-/open ethercat device
+            if (state == module_state_init)
+                break;
+        case init_2_boot:
+            break;
+        case boot_2_init:
+        case boot_2_preop:
+        case boot_2_safeop:
+        case boot_2_op:
+            // ====> re-/open ethercat device
+            if (state == module_state_init)
+                break;
+        case init_2_op:
+        case init_2_safeop:
+        case init_2_preop:
+            // ====> initial devices            
+            if (state == module_state_preop)
+                break;
+        case preop_2_op:
+        case preop_2_safeop: {
+            // ====> start receiving measurements
+            if (state == module_state_safeop)
+                break;
+        }
+        case safeop_2_op: {
+            // ====> start sending commands
+            for (auto& d : demux) {
+                d->start();
+            }
+
+            for (auto& d : mux) {
+                d->start();
+            }
             break;
         }
-        case module_state_op: {
-            route_map_t::iterator it;
-            for (it = _routes.begin(); it != _routes.end(); ++it)
-                it->second->create_route(name);
+        case op_2_op:
+        case safeop_2_safeop:
+        case preop_2_preop:
+            // ====> do nothing
             break;
-        }
+
         default:
-            ret = -1;
             break;
     }
 
-    if (ret == 0)
-        this->state = state;
-
-    return ret;
+    return (this->state = state);
 }
 
-//! send a request to module
-/*!
- * \param reqcode request code
- * \param ptr pointer to request structure
- * \return success or failure
- */
-int pdrouting::request(int reqcode, void* ptr) {
-    int ret = 0;
-
-    switch (reqcode) {
-        case MOD_REQUEST_GET_PDIN: {            
-            process_data_t *pd = (process_data_t *)ptr;
-            pd->pd = NULL;
-            pd->len = 0;
-
-            if (_routes.find(pd->slave_id) != _routes.end()) {
-                pd->pd = _routes[pd->slave_id]->in.pd;
-                pd->len = _routes[pd->slave_id]->in.pd_len;
-            }
-
-            break;
-        }
-        case MOD_REQUEST_GET_PDOUT: {            
-            process_data_t *pd = (process_data_t *)ptr;
-            pd->pd = NULL;
-            pd->len = 0;
-
-            if (_routes.find(pd->slave_id) != _routes.end()) {
-                pd->pd = _routes[pd->slave_id]->out.pd;
-                pd->len = _routes[pd->slave_id]->out.pd_len;
-            }
-
-            break;
-        }
-        case MOD_REQUEST_SET_TRIGGER_CB: {
-            set_trigger_cb_t *cb = (set_trigger_cb_t *)ptr;
-            if (cb->cb == NULL) {
-                log(error, "ERROR could not register, callback is NULL\n");
-                break;
-            }
-
-            if (_routes.find(cb->clk_id) != _routes.end())
-                _routes[cb->clk_id]->add_trigger_module(*cb);
-            break;
-        }
-        case MOD_REQUEST_UNSET_TRIGGER_CB: {
-            set_trigger_cb_t *cb = (set_trigger_cb_t *)ptr;
-
-            if (cb->cb == NULL) {
-                log(error, "ERROR could not remove, callback is NULL\n");
-                break;
-            }
-
-            if (_routes.find(cb->clk_id) != _routes.end())
-                _routes[cb->clk_id]->remove_trigger_module(*cb);
-            break;
-        }
-        default:
-            ret = -1;
-            break;
-    }
-
-    return ret;
-}
 
