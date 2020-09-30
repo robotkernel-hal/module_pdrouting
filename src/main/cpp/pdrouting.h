@@ -84,6 +84,7 @@ class pdrouting :
 
                 struct {
                     std::string                     name;
+                    std::string                     trigger_name;
                     ssize_t                         hash;
                     robotkernel::sp_process_data_t  dev;
                 } pdin;

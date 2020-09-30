@@ -58,7 +58,10 @@ pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Nod
     */
 
     name = get_as<string>(node, "name");
+    pdin.trigger_name = get_as<string>(node, "trigger_name", "");
     pdin.name = get_as<string>(node, "pd_input_device");
+
+    parent->log(verbose, "%s got pd_input_device %s\n", name.c_str(), pdin.name.c_str());
 
     for (const auto& output_node : node["outputs"]) {
         outputs.push_back(output(get_as<string>(output_node, "name"), 
@@ -69,6 +72,8 @@ pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Nod
 //! creating process data output and trigger
 void pdrouting::pd_demux::start() {
     kernel& k = *kernel::get_instance();
+
+    parent->log(info, "%s try to get process data: %s\n", name.c_str(), pdin.name.c_str());
 
     pdin.dev  = k.get_process_data(pdin.name);
     pdin.hash = pdin.dev->set_consumer(shared_from_this());
@@ -92,7 +97,12 @@ void pdrouting::pd_demux::start() {
         k.add_device(output.pdout);
     }
 
-    auto trigger_dev = k.get_trigger(pdin.dev->clk_device);
+    if (pdin.trigger_name == "") {
+        pdin.trigger_name = pdin.dev->clk_device;
+    }
+
+    parent->log(info, "%s try to get trigger: %s\n", name.c_str(), pdin.trigger_name.c_str());
+    auto trigger_dev = k.get_trigger(pdin.trigger_name);
     trigger_dev->add_trigger(shared_from_this());
 }
 
@@ -159,6 +169,9 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
     pdout.name = get_as<string>(node, "pd_output_device");
     name = get_as<string>(node, "name");
     trigger_name = get_as<string>(node, "trigger_name");
+
+    parent->log(verbose, "%s got pd_output_device %s trigger_name %s\n", name.c_str(), 
+            pdout.name.c_str(), trigger_name.c_str());
 
     for (const auto& input_node : node["inputs"]) {
         inputs.push_back(input(get_as<string>(input_node, "name"), 
