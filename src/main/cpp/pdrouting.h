@@ -65,13 +65,14 @@ class pdrouting :
             public:
                 class output {
                     public: 
-                        output(const std::string& name, const uint32_t& len) :
-                            name(name), len(len), pdout(nullptr), pdtr(nullptr)
+                        output(const std::string& name, const uint32_t& len, const std::string& desc = "") :
+                            name(name), len(len), desc(desc), pdout(nullptr), pdtr(nullptr)
                         {
                         }
 
                         std::string name;
                         uint32_t len;
+                        std::string desc;
                         robotkernel::sp_process_data_t pdout;
                         robotkernel::sp_trigger_t      pdtr;
                         ssize_t hash;
@@ -121,14 +122,15 @@ class pdrouting :
             public:
                 class input {
                     public: 
-                        input(const std::string& name, const uint32_t& len) :
-                            name(name), len(len), 
+                        input(const std::string& name, const uint32_t& len, const std::string& desc = "") :
+                            name(name), len(len), desc(desc),
                             pdin(nullptr), pdtr(nullptr)
                         {
                         }
 
                         std::string name;
                         uint32_t len;
+                        std::string desc;
                         robotkernel::sp_process_data_t pdin;
                         robotkernel::sp_trigger_t      pdtr;
                         ssize_t hash;

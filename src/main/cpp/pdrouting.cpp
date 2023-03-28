@@ -64,8 +64,15 @@ pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Nod
     parent->log(verbose, "%s got pd_input_device %s\n", name.c_str(), pdin.name.c_str());
 
     for (const auto& output_node : node["outputs"]) {
+        std::string desc = "";
+        if (output_node["desc"]) {
+            YAML::Emitter emitter;
+            emitter << output_node["desc"];
+            desc = emitter.c_str();
+        }
+
         outputs.push_back(output(get_as<string>(output_node, "name"), 
-                    get_as<uint32_t>(output_node, "len")));
+                    get_as<uint32_t>(output_node, "len"), desc));
     }
 }
                         
@@ -87,7 +94,7 @@ void pdrouting::pd_demux::start() {
                 "we need %u bytes\n", name.c_str(), pdin.name.c_str(), pdin.dev->length, act_len);
 
     for (auto& output : outputs) {
-        string pd_desc = format_string("- uint8_t[%d]: data\n", output.len);
+        string pd_desc = output.desc == "" ? format_string("- uint8_t[%d]: data\n", output.len) : output.desc;
         string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), output.name.c_str());
         output.pdtr  = make_shared<trigger>(tmp, "inputs");
         output.pdout = make_shared<triple_buffer>(output.len, tmp, string("inputs"), pd_desc, output.pdtr->id());
@@ -174,8 +181,15 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
             pdout.name.c_str(), trigger_name.c_str());
 
     for (const auto& input_node : node["inputs"]) {
+        std::string desc = "";
+        if (input_node["desc"]) {
+            YAML::Emitter emitter;
+            emitter << input_node["desc"];
+            desc = emitter.c_str();
+        }
+
         inputs.push_back(input(get_as<string>(input_node, "name"), 
-                    get_as<uint32_t>(input_node, "len")));
+                    get_as<uint32_t>(input_node, "len"), desc));
     }
 }
                         
@@ -195,7 +209,7 @@ void pdrouting::pd_mux::start() {
                 "we need %u bytes\n", name.c_str(), pdout.name.c_str(), pdout.dev->length, act_len);
 
     for (auto& input : inputs) {
-        string pd_desc = format_string("- uint8_t[%d]: data\n", input.len);
+        string pd_desc = input.desc == "" ? format_string("- uint8_t[%d]: data\n", input.len) : input.desc;
         string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), input.name.c_str());
         input.pdtr  = make_shared<trigger>(tmp, "outputs");
         input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc, input.pdtr->id());
