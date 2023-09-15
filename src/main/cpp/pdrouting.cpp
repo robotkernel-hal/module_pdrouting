@@ -76,6 +76,26 @@ pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Nod
     }
 }
                         
+size_t get_dt_size(const std::string& dt) {
+    if ((dt == "uint8_t") || (dt == "int8_t") || (dt == "char")) {
+        return (size_t)1u;
+    } 
+
+    if ((dt == "uint16_t") || (dt == "int16_t") || (dt == "short")) {
+        return (size_t)2u;
+    }
+
+    if ((dt == "uint32_t") || (dt == "int32_t") || (dt == "long") || (dt == "float")) {
+        return (size_t)4u;
+    }
+
+    if ((dt == "uint64_t") || (dt == "int64_t") || (dt == "double")) {
+        return (size_t)8u;
+    }
+
+    return (size_t)0u;
+}
+
 //! creating process data output and trigger
 void pdrouting::pd_demux::start() {
     kernel& k = *kernel::get_instance();
@@ -93,7 +113,58 @@ void pdrouting::pd_demux::start() {
         throw str_exception("demuxer %s length mismatch: pd %s has %u bytes, "
                 "we need %u bytes\n", name.c_str(), pdin.name.c_str(), pdin.dev->length, act_len);
 
+    size_t skip_len = 0;
+    bool gen_abort = false;
+
     for (auto& output : outputs) {
+        size_t cur_skip = 0;
+        act_len = 0;
+
+
+        YAML::Node pddef_node = YAML::Load(pdin.dev->process_data_definition);
+        YAML::Emitter desc_emitter;
+        desc_emitter << YAML::BeginSeq;
+
+        for (const auto& entry : pddef_node) {
+            for (const auto& kv : entry) {
+                string key   = kv.first.as<string>();
+                string value = kv.second.as<string>();
+
+                size_t dt_size = get_dt_size(key);
+
+                if (skip_len > cur_skip) {
+                    cur_skip += dt_size;
+                    continue;
+                }
+
+                desc_emitter << YAML::BeginMap << YAML::Key << key << YAML::Value << value << YAML::EndMap;
+                act_len += dt_size;
+
+                if (act_len == output.len) {
+                    // split at boundary, everything ok
+                    skip_len += act_len;
+                    break;
+                } else if (act_len > output.len) {
+                    // did not split at desc boundary, abort generation
+                    parent->log(warning, "did not split \"%s\" at pd desc boundaries, abort!\n", pdin.dev->id().c_str());
+                    gen_abort = true;
+                    break;
+                }
+            }
+        }
+
+        if (gen_abort) { break; }
+
+        desc_emitter << YAML::EndSeq;
+        
+        output.gen_desc = desc_emitter.c_str();
+    }
+
+    for (auto& output : outputs) {
+        if ((output.desc == "") && !gen_abort) {
+            output.desc = output.gen_desc;
+        }
+
         string pd_desc = output.desc == "" ? format_string("- uint8_t[%d]: data\n", output.len) : output.desc;
         string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), output.name.c_str());
         output.pdtr  = make_shared<trigger>(tmp, "inputs");
@@ -207,8 +278,59 @@ void pdrouting::pd_mux::start() {
     if (act_len > pdout.dev->length)
         throw str_exception("muxer %s length mismatch: pd %s has %u bytes, "
                 "we need %u bytes\n", name.c_str(), pdout.name.c_str(), pdout.dev->length, act_len);
+    
+    size_t skip_len = 0;
+    bool gen_abort = false;
 
     for (auto& input : inputs) {
+        size_t cur_skip = 0;
+        act_len = 0;
+
+
+        YAML::Node pddef_node = YAML::Load(pdout.dev->process_data_definition);
+        YAML::Emitter desc_emitter;
+        desc_emitter << YAML::BeginSeq;
+
+        for (const auto& entry : pddef_node) {
+            for (const auto& kv : entry) {
+                string key   = kv.first.as<string>();
+                string value = kv.second.as<string>();
+
+                size_t dt_size = get_dt_size(key);
+
+                if (skip_len > cur_skip) {
+                    cur_skip += dt_size;
+                    continue;
+                }
+
+                desc_emitter << YAML::BeginMap << YAML::Key << key << YAML::Value << value << YAML::EndMap;
+                act_len += dt_size;
+                
+                if (act_len == input.len) {
+                    // split at boundary, everything ok
+                    skip_len += act_len;
+                    break;
+                } else if (act_len > input.len) {
+                    // did not split at desc boundary, abort generation
+                    parent->log(warning, "did not split \"%s\" at pd desc boundaries, abort!\n", pdout.dev->id().c_str());
+                    gen_abort = true;
+                    break;
+                }
+            }
+        }
+
+        if (gen_abort) { break; }
+
+        desc_emitter << YAML::EndSeq;
+        
+        input.gen_desc = desc_emitter.c_str();
+    }
+
+    for (auto& input : inputs) {
+        if ((input.desc == "") && !gen_abort) {
+            input.desc = input.gen_desc;
+        }
+
         string pd_desc = input.desc == "" ? format_string("- uint8_t[%d]: data\n", input.len) : input.desc;
         string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), input.name.c_str());
         input.pdtr  = make_shared<trigger>(tmp, "outputs");

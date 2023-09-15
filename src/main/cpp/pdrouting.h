@@ -73,6 +73,7 @@ class pdrouting :
                         std::string name;
                         uint32_t len;
                         std::string desc;
+                        std::string gen_desc;
                         robotkernel::sp_process_data_t pdout;
                         robotkernel::sp_trigger_t      pdtr;
                         ssize_t hash;
@@ -131,6 +132,7 @@ class pdrouting :
                         std::string name;
                         uint32_t len;
                         std::string desc;
+                        std::string gen_desc;
                         robotkernel::sp_process_data_t pdin;
                         robotkernel::sp_trigger_t      pdtr;
                         ssize_t hash;
