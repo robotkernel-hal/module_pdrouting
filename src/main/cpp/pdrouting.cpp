@@ -246,7 +246,8 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
 
     pdout.name = get_as<string>(node, "pd_output_device");
     name = get_as<string>(node, "name");
-    trigger_name = get_as<string>(node, "trigger_name");
+    trigger_name = get_as<string>(node, "trigger_name", "");
+    expected_rate = get_as<int>(node, "expected_rate", 1);
 
     parent->log(verbose, "%s got pd_output_device %s trigger_name %s\n", name.c_str(), 
             pdout.name.c_str(), trigger_name.c_str());
@@ -261,6 +262,18 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
 
         inputs.push_back(input(get_as<string>(input_node, "name"), 
                     get_as<uint32_t>(input_node, "len"), desc));
+    }
+
+    if (trigger_name == "") {
+        // using trigger_collector
+        collector_trigger = make_shared<trigger>(parent->name, name);
+        collector = make_shared<trigger_collector>(inputs.size(), 1.0/expected_rate, 
+                std::bind(&trigger::trigger_modules, collector_trigger));
+
+        collector_trigger_cbs.resize(inputs.size());
+        for (unsigned i = 0; i < collector_trigger_cbs.size(); ++i) {
+            collector_trigger_cbs[i] = make_shared<trigger_cb>(std::bind(&trigger_collector::trigger_collect, collector, i));
+        }
     }
 }
                         
@@ -326,6 +339,7 @@ void pdrouting::pd_mux::start() {
         input.gen_desc = desc_emitter.c_str();
     }
 
+    int trigger_cbs_idx = 0;
     for (auto& input : inputs) {
         if ((input.desc == "") && !gen_abort) {
             input.desc = input.gen_desc;
@@ -339,18 +353,30 @@ void pdrouting::pd_mux::start() {
 
         k.add_device(input.pdtr);
         k.add_device(input.pdin);
+
+        if (trigger_name == "") {
+            input.pdtr->add_trigger(collector_trigger_cbs[trigger_cbs_idx++]);
+        }
     }
     
-    auto trigger_dev = k.get_trigger(trigger_name);
-    trigger_dev->add_trigger(shared_from_this());
+    if (trigger_name != "") {
+        auto trigger_dev = k.get_trigger(trigger_name);
+        trigger_dev->add_trigger(shared_from_this());
+    } else {
+        collector_trigger->add_trigger(shared_from_this());
+    }
 }
 
 //! destroying process data input and trigger
 void pdrouting::pd_mux::stop() {
     kernel& k = *kernel::get_instance();
     
-    auto trigger_dev = k.get_trigger(trigger_name);
-    trigger_dev->remove_trigger(shared_from_this());
+    if (trigger_name != "") {
+        auto trigger_dev = k.get_trigger(trigger_name);
+        trigger_dev->remove_trigger(shared_from_this());
+    } else {
+        collector_trigger->remove_trigger(shared_from_this());
+    }
     
     for (auto& input : inputs) {
         k.remove_device(input.pdin);
