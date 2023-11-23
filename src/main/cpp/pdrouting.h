@@ -158,6 +158,7 @@ class pdrouting :
                     std::string                     name;
                     ssize_t                         hash;
                     robotkernel::sp_process_data_t  dev;
+                    robotkernel::sp_trigger_t       tr;
                 } pdout;
 
                 std::string name; 

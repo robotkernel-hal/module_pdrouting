@@ -125,6 +125,8 @@ void pdrouting::pd_demux::start() {
         YAML::Emitter desc_emitter;
         desc_emitter << YAML::BeginSeq;
 
+        bool do_break = false; 
+
         for (const auto& entry : pddef_node) {
             for (const auto& kv : entry) {
                 string key   = kv.first.as<string>();
@@ -143,13 +145,17 @@ void pdrouting::pd_demux::start() {
                 if (act_len == output.len) {
                     // split at boundary, everything ok
                     skip_len += act_len;
-                    break;
+                    do_break = true;
                 } else if (act_len > output.len) {
                     // did not split at desc boundary, abort generation
                     parent->log(warning, "did not split \"%s\" at pd desc boundaries, abort!\n", pdin.dev->id().c_str());
                     gen_abort = true;
-                    break;
+                    do_break = true;
                 }
+            }
+
+            if (do_break) {
+                break;
             }
         }
 
@@ -284,6 +290,10 @@ void pdrouting::pd_mux::start() {
     pdout.dev  = k.get_process_data(pdout.name);
     pdout.hash = pdout.dev->set_provider(shared_from_this());
 
+    if (pdout.dev->clk_device != "") {
+        pdout.tr = k.get_trigger(pdout.dev->clk_device);
+    }
+
     size_t act_len = 0;
     for (auto& input : inputs)
         act_len += input.len;
@@ -304,6 +314,10 @@ void pdrouting::pd_mux::start() {
         YAML::Emitter desc_emitter;
         desc_emitter << YAML::BeginSeq;
 
+//        parent->log(info, "Input_len %d\n", input.len);
+
+        bool do_break = false;
+
         for (const auto& entry : pddef_node) {
             for (const auto& kv : entry) {
                 string key   = kv.first.as<string>();
@@ -318,17 +332,23 @@ void pdrouting::pd_mux::start() {
 
                 desc_emitter << YAML::BeginMap << YAML::Key << key << YAML::Value << value << YAML::EndMap;
                 act_len += dt_size;
+
+//                parent->log(info, "emitting desc %s len %d, act_len %d\n", value.c_str(), dt_size, act_len);
                 
                 if (act_len == input.len) {
                     // split at boundary, everything ok
                     skip_len += act_len;
-                    break;
+                    do_break = true;
                 } else if (act_len > input.len) {
                     // did not split at desc boundary, abort generation
                     parent->log(warning, "did not split \"%s\" at pd desc boundaries, abort!\n", pdout.dev->id().c_str());
                     gen_abort = true;
-                    break;
+                    do_break = true;
                 }
+            }
+
+            if (do_break) {
+                break;
             }
         }
 
@@ -414,6 +434,9 @@ void pdrouting::pd_mux::tick() {
     }
 
     pdout.dev->push(pdout.hash);
+    if (pdout.tr != nullptr) {
+        pdout.tr->trigger_modules();
+    }
 }
 
 //! construction
