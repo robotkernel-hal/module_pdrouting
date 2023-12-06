@@ -76,6 +76,26 @@ pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Nod
     }
 }
                         
+size_t get_dt_size(const std::string& dt) {
+    if ((dt == "uint8_t") || (dt == "int8_t") || (dt == "char")) {
+        return (size_t)1u;
+    } 
+
+    if ((dt == "uint16_t") || (dt == "int16_t") || (dt == "short")) {
+        return (size_t)2u;
+    }
+
+    if ((dt == "uint32_t") || (dt == "int32_t") || (dt == "long") || (dt == "float")) {
+        return (size_t)4u;
+    }
+
+    if ((dt == "uint64_t") || (dt == "int64_t") || (dt == "double")) {
+        return (size_t)8u;
+    }
+
+    return (size_t)0u;
+}
+
 //! creating process data output and trigger
 void pdrouting::pd_demux::start() {
     kernel& k = *kernel::get_instance();
@@ -93,7 +113,64 @@ void pdrouting::pd_demux::start() {
         throw str_exception("demuxer %s length mismatch: pd %s has %u bytes, "
                 "we need %u bytes\n", name.c_str(), pdin.name.c_str(), pdin.dev->length, act_len);
 
+    size_t skip_len = 0;
+    bool gen_abort = false;
+
     for (auto& output : outputs) {
+        size_t cur_skip = 0;
+        act_len = 0;
+
+
+        YAML::Node pddef_node = YAML::Load(pdin.dev->process_data_definition);
+        YAML::Emitter desc_emitter;
+        desc_emitter << YAML::BeginSeq;
+
+        bool do_break = false; 
+
+        for (const auto& entry : pddef_node) {
+            for (const auto& kv : entry) {
+                string key   = kv.first.as<string>();
+                string value = kv.second.as<string>();
+
+                size_t dt_size = get_dt_size(key);
+
+                if (skip_len > cur_skip) {
+                    cur_skip += dt_size;
+                    continue;
+                }
+
+                desc_emitter << YAML::BeginMap << YAML::Key << key << YAML::Value << value << YAML::EndMap;
+                act_len += dt_size;
+
+                if (act_len == output.len) {
+                    // split at boundary, everything ok
+                    skip_len += act_len;
+                    do_break = true;
+                } else if (act_len > output.len) {
+                    // did not split at desc boundary, abort generation
+                    parent->log(warning, "did not split \"%s\" at pd desc boundaries, abort!\n", pdin.dev->id().c_str());
+                    gen_abort = true;
+                    do_break = true;
+                }
+            }
+
+            if (do_break) {
+                break;
+            }
+        }
+
+        if (gen_abort) { break; }
+
+        desc_emitter << YAML::EndSeq;
+        
+        output.gen_desc = desc_emitter.c_str();
+    }
+
+    for (auto& output : outputs) {
+        if ((output.desc == "") && !gen_abort) {
+            output.desc = output.gen_desc;
+        }
+
         string pd_desc = output.desc == "" ? format_string("- uint8_t[%d]: data\n", output.len) : output.desc;
         string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), output.name.c_str());
         output.pdtr  = make_shared<trigger>(tmp, "inputs");
@@ -175,7 +252,8 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
 
     pdout.name = get_as<string>(node, "pd_output_device");
     name = get_as<string>(node, "name");
-    trigger_name = get_as<string>(node, "trigger_name");
+    trigger_name = get_as<string>(node, "trigger_name", "");
+    expected_rate = get_as<int>(node, "expected_rate", 1);
 
     parent->log(verbose, "%s got pd_output_device %s trigger_name %s\n", name.c_str(), 
             pdout.name.c_str(), trigger_name.c_str());
@@ -191,6 +269,18 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
         inputs.push_back(input(get_as<string>(input_node, "name"), 
                     get_as<uint32_t>(input_node, "len"), desc));
     }
+
+    if (trigger_name == "") {
+        // using trigger_collector
+        collector_trigger = make_shared<trigger>(parent->name, name);
+        collector = make_shared<trigger_collector>(inputs.size(), 1.0/expected_rate, 
+                std::bind(&trigger::trigger_modules, collector_trigger));
+
+        collector_trigger_cbs.resize(inputs.size());
+        for (unsigned i = 0; i < collector_trigger_cbs.size(); ++i) {
+            collector_trigger_cbs[i] = make_shared<trigger_cb>(std::bind(&trigger_collector::trigger_collect, collector, i));
+        }
+    }
 }
                         
 //! creating process data input and trigger
@@ -200,6 +290,10 @@ void pdrouting::pd_mux::start() {
     pdout.dev  = k.get_process_data(pdout.name);
     pdout.hash = pdout.dev->set_provider(shared_from_this());
 
+    if (pdout.dev->clk_device != "") {
+        pdout.tr = k.get_trigger(pdout.dev->clk_device);
+    }
+
     size_t act_len = 0;
     for (auto& input : inputs)
         act_len += input.len;
@@ -207,8 +301,70 @@ void pdrouting::pd_mux::start() {
     if (act_len > pdout.dev->length)
         throw str_exception("muxer %s length mismatch: pd %s has %u bytes, "
                 "we need %u bytes\n", name.c_str(), pdout.name.c_str(), pdout.dev->length, act_len);
+    
+    size_t skip_len = 0;
+    bool gen_abort = false;
 
     for (auto& input : inputs) {
+        size_t cur_skip = 0;
+        act_len = 0;
+
+
+        YAML::Node pddef_node = YAML::Load(pdout.dev->process_data_definition);
+        YAML::Emitter desc_emitter;
+        desc_emitter << YAML::BeginSeq;
+
+//        parent->log(info, "Input_len %d\n", input.len);
+
+        bool do_break = false;
+
+        for (const auto& entry : pddef_node) {
+            for (const auto& kv : entry) {
+                string key   = kv.first.as<string>();
+                string value = kv.second.as<string>();
+
+                size_t dt_size = get_dt_size(key);
+
+                if (skip_len > cur_skip) {
+                    cur_skip += dt_size;
+                    continue;
+                }
+
+                desc_emitter << YAML::BeginMap << YAML::Key << key << YAML::Value << value << YAML::EndMap;
+                act_len += dt_size;
+
+//                parent->log(info, "emitting desc %s len %d, act_len %d\n", value.c_str(), dt_size, act_len);
+                
+                if (act_len == input.len) {
+                    // split at boundary, everything ok
+                    skip_len += act_len;
+                    do_break = true;
+                } else if (act_len > input.len) {
+                    // did not split at desc boundary, abort generation
+                    parent->log(warning, "did not split \"%s\" at pd desc boundaries, abort!\n", pdout.dev->id().c_str());
+                    gen_abort = true;
+                    do_break = true;
+                }
+            }
+
+            if (do_break) {
+                break;
+            }
+        }
+
+        if (gen_abort) { break; }
+
+        desc_emitter << YAML::EndSeq;
+        
+        input.gen_desc = desc_emitter.c_str();
+    }
+
+    int trigger_cbs_idx = 0;
+    for (auto& input : inputs) {
+        if ((input.desc == "") && !gen_abort) {
+            input.desc = input.gen_desc;
+        }
+
         string pd_desc = input.desc == "" ? format_string("- uint8_t[%d]: data\n", input.len) : input.desc;
         string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), input.name.c_str());
         input.pdtr  = make_shared<trigger>(tmp, "outputs");
@@ -217,18 +373,30 @@ void pdrouting::pd_mux::start() {
 
         k.add_device(input.pdtr);
         k.add_device(input.pdin);
+
+        if (trigger_name == "") {
+            input.pdtr->add_trigger(collector_trigger_cbs[trigger_cbs_idx++]);
+        }
     }
     
-    auto trigger_dev = k.get_trigger(trigger_name);
-    trigger_dev->add_trigger(shared_from_this());
+    if (trigger_name != "") {
+        auto trigger_dev = k.get_trigger(trigger_name);
+        trigger_dev->add_trigger(shared_from_this());
+    } else {
+        collector_trigger->add_trigger(shared_from_this());
+    }
 }
 
 //! destroying process data input and trigger
 void pdrouting::pd_mux::stop() {
     kernel& k = *kernel::get_instance();
     
-    auto trigger_dev = k.get_trigger(trigger_name);
-    trigger_dev->remove_trigger(shared_from_this());
+    if (trigger_name != "") {
+        auto trigger_dev = k.get_trigger(trigger_name);
+        trigger_dev->remove_trigger(shared_from_this());
+    } else {
+        collector_trigger->remove_trigger(shared_from_this());
+    }
     
     for (auto& input : inputs) {
         k.remove_device(input.pdin);
@@ -266,6 +434,9 @@ void pdrouting::pd_mux::tick() {
     }
 
     pdout.dev->push(pdout.hash);
+    if (pdout.tr != nullptr) {
+        pdout.tr->trigger_modules();
+    }
 }
 
 //! construction

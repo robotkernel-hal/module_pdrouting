@@ -29,6 +29,7 @@
 #include "robotkernel/module_base.h"
 #include "robotkernel/kernel.h"
 #include "robotkernel/trigger.h"
+#include "robotkernel/trigger_collector.h"
 #include "robotkernel/process_data.h"
 
 #include "service_provider/process_data_inspection/base.h"
@@ -38,6 +39,17 @@ namespace module_pdrouting {
 }
 #endif
 
+class trigger_cb : public robotkernel::trigger_base {
+    public:
+        std::function<void(void)> cb;
+
+        trigger_cb(std::function<void(void)> cb) : cb(cb) {}
+
+        //! trigger function
+        void tick() { cb(); }
+};
+
+typedef std::shared_ptr<trigger_cb> sp_trigger_cb_t;
 class pdrouting :
     public std::enable_shared_from_this<pdrouting>,
     public robotkernel::module_base
@@ -73,6 +85,7 @@ class pdrouting :
                         std::string name;
                         uint32_t len;
                         std::string desc;
+                        std::string gen_desc;
                         robotkernel::sp_process_data_t pdout;
                         robotkernel::sp_trigger_t      pdtr;
                         ssize_t hash;
@@ -131,6 +144,7 @@ class pdrouting :
                         std::string name;
                         uint32_t len;
                         std::string desc;
+                        std::string gen_desc;
                         robotkernel::sp_process_data_t pdin;
                         robotkernel::sp_trigger_t      pdtr;
                         ssize_t hash;
@@ -144,11 +158,16 @@ class pdrouting :
                     std::string                     name;
                     ssize_t                         hash;
                     robotkernel::sp_process_data_t  dev;
+                    robotkernel::sp_trigger_t       tr;
                 } pdout;
 
                 std::string name; 
                 std::string trigger_name;
+                double expected_rate;
                     
+                robotkernel::sp_trigger_t collector_trigger;
+                std::shared_ptr<robotkernel::trigger_collector> collector;
+                std::vector<sp_trigger_cb_t> collector_trigger_cbs;
             public:
                 //! construction
                 /*!
