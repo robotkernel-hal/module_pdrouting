@@ -1,25 +1,59 @@
-# vim: tabstop=4 softtabstop=4 shiftwidth=4 expandtab:
+# Configuration file for module_pdrouting.
+#
+# vi: set ft=yaml nowrap:
+# -*- mode: yaml -*-
 
-loglevel: [ 
-    error, warning, info, 
-    module_error, module_warning, module_info, 
-    interface_error, interface_warning, interface_info 
-    ]
+#########################################################
+# logging settings
 
-modules:
--   name: my_pdrouting
-    module_file: libmodule_pdrouting.so    
-    config: 
-    -   slave_id: 30
-        in:
-            modname: spw
-            slave_id: 67
-            pd_offset: 32
-            pd_len: 32
-        out:
-            modname: spw
-            slave_id: 132
-            pd_offset: 16
-            pd_len: 8
-    power_up: true
+# Standard robotkernel module local loglevel.
+#loglevel: verbose
 
+#########################################################
+# Process data demuxer configuration.
+demux:
+- # Demuxer name (prefix for demuxed process data).
+  name: elmo_0_fsoe_demux
+
+  # Process data device to demux.
+  pd_input_device: ethercat.slave_0.inputs.pd
+
+  # Demux data outputs.
+  outputs:
+  - # Demuxed process data infix name.
+    name: fsoe
+
+    # Demuxing next <len> bytes.
+    len: 11
+
+  - # Demuxed process data infix name.
+    name: axis
+
+    # Demuxing next <len> bytes.
+    len: 6 
+
+#########################################################
+# Process data Muxer configuration.
+mux:
+- # Muxer name (prefix for muxed process data)
+  name: elmo_0_fsoe_mux
+
+  # Process data device to mux
+  pd_output_device: ethercat.slave_0.outputs.pd
+
+  # Trigger device to be trigger when all muxing devices have data.
+  trigger_name: ethercat.slave_0.inputs.trigger
+  
+  # Mux data outputs.
+  outputs:
+  - # Muxed process data infix name.
+    name: fsoe
+
+    # Muxing next <len> bytes.
+    len: 11
+
+  - # Muxed process data infix name.
+    name: axis
+
+    # Muxing next <len> bytes.
+    len: 6 
