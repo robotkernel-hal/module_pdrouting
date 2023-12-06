@@ -1,6 +1,14 @@
 # module_pdrouting
 
-This robotkernel module does process data routing.
+This robotkernel module does process data routing. It enables handles process data devices in two connection methods. 
+
+<dl>
+  <dt>Multiplexing</dt>
+  <dd>With multiplexing the modules enables that many source process data devices are *multiplexed* into one target process data device. For this the source pd's are serialized consecutively into a new or arleady exting target pd.</dd>
+
+  <dt>Demultiplexing</dt>
+  <dd>The opposite method of multiplexing. Here one source process data devices is splitted into many target process data devices. It it always splitted at byte boundaries</dd>
+</dl>
 
 ## Configuration
 
