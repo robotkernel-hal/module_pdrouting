@@ -1,7 +1,0 @@
-This robotkernel module does process data routing.
-
-= Configuration =
-
-= Process data = 
-
-[[Category:robotkernel-5|pdrouting]]
