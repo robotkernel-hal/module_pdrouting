@@ -57,3 +57,14 @@ mux:
 
     # Muxing next <len> bytes.
     len: 6 
+
+#########################################################
+# Process data one-to-many relationship
+one_to_many:
+  # Process data device containing inputs to distribute to 
+  # all specified outputs.
+  pd_input_device: ecat.slave_1.inputs.pd
+
+  # Process data outputs devices. 
+  pd_output_devices:
+  - ecat.slave_2.outputs.pd

@@ -72,6 +72,20 @@ mux:
 
     # Muxing next <len> bytes.
     len: 6 
+         
+#########################################################
+# Process data one-to-many relationship
+one_to_many:
+  # Process data device containing inputs to distribute to 
+  # all specified outputs.
+  pd_input_device: <name>.inputs.pd
+
+  # Process data outputs devices. 
+  pd_output_devices:
+  - <output_1>.outputs.pd
+  - <output_2>.outputs.pd
+  - <output_3>.outputs.pd
+  - <output_4>.outputs.pd
 ```
 
 ## Process data 
