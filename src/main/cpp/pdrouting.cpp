@@ -41,6 +41,100 @@ using namespace robotkernel;
 using namespace std;
 using namespace module_pdrouting;
 using namespace string_util;
+                
+pdrouting::one_to_many::one_to_many(std::shared_ptr<pdrouting> parent, const YAML::Node& node) :
+    pd_provider(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
+    pd_consumer(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
+    parent(parent) 
+{
+    name = get_as<string>(node, "name");
+    pdin.trigger_name = get_as<string>(node, "trigger_name", "");
+    pdin.name = get_as<std::string>(node, "pd_input_device");
+
+    YAML::Node pd_output_devices_node = get_as<YAML::Node>(node, "pd_output_devices");
+
+    for (const auto& pd_node : pd_output_devices_node) {
+        std::string pdout_name = pd_node.as<std::string>();
+        pdout.push_back({ pdout_name, "", 0, nullptr, nullptr });
+    }
+
+}
+
+pdrouting::one_to_many::~one_to_many() {
+}
+
+//! creating process data output and trigger
+void pdrouting::one_to_many::start() {
+    kernel& k = *kernel::get_instance();
+
+    parent->log(info, "%s try to get process data: %s\n", name.c_str(), pdin.name.c_str());
+
+    pdin.dev  = k.get_process_data(pdin.name);
+    pdin.hash = pdin.dev->set_consumer(shared_from_this());
+
+    size_t in_length = pdin.dev->length;
+
+    if (pdin.trigger_name == "") {
+        pdin.trigger_name = pdin.dev->clk_device;
+    }
+
+    for (auto& tmp_pdout : pdout) {
+        tmp_pdout.dev = k.get_process_data(tmp_pdout.name);
+
+        if (tmp_pdout.dev->length != in_length) {
+            throw str_exception("%s: pdout %s has wrong length! (need %d bytes, got %d bytes)", 
+                    name.c_str(), tmp_pdout.name.c_str(), tmp_pdout.dev->length, in_length);
+        }
+
+        tmp_pdout.hash = tmp_pdout.dev->set_provider(shared_from_this());
+
+        if (tmp_pdout.dev->clk_device != "") {
+            tmp_pdout.tr = k.get_trigger(tmp_pdout.dev->clk_device);
+        }
+    }
+
+    if (pdin.trigger_name != "") {
+        pdin.tr = k.get_trigger(pdin.trigger_name);
+        pdin.tr->add_trigger(shared_from_this());
+    }
+}
+                
+//! trigger tick
+void pdrouting::one_to_many::tick() {
+    auto buf = pdin.dev->pop(pdin.hash);
+
+    for (auto& tmp_pdout : pdout) {
+        tmp_pdout.dev->write(tmp_pdout.hash, 0, buf, pdin.dev->length);
+        
+        if (tmp_pdout.tr) {
+            tmp_pdout.tr->trigger_modules();
+        }
+    }
+}
+
+//! destroying process data output and trigger
+void pdrouting::one_to_many::stop() {
+    if (pdin.tr) {
+        pdin.tr->remove_trigger(shared_from_this());
+        pdin.tr = nullptr;
+    }
+
+    for (auto& tmp_pdout : pdout) {
+        if (tmp_pdout.tr) {
+            tmp_pdout.tr = nullptr;
+        }
+
+        tmp_pdout.dev->reset_provider(tmp_pdout.hash);
+        tmp_pdout.hash = 0;
+
+        tmp_pdout.dev = nullptr;
+    }
+    
+    pdin.dev->reset_consumer(pdin.hash);
+    pdin.hash = 0;
+    pdin.dev = nullptr;
+}
+
 
 pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Node& node) :
     pd_provider(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
@@ -468,6 +562,13 @@ void pdrouting::init() {
             mux.push_back(d);
         }
     }
+
+    if (config["one_to_many"]) {
+        for (const auto& o2m_node : config["one_to_many"]) {
+            auto d = std::make_shared<one_to_many>(shared_from_this(), o2m_node);
+            o2m.push_back(d);
+        }
+    }
 }
         
 //! set module state machine to defined state
@@ -485,6 +586,10 @@ int pdrouting::set_state(module_state_t state) {
         case op_2_init:
         case op_2_boot:
             // ====> stop sending commands
+            for (auto& d : o2m) {
+                d->stop();
+            }
+
             for (auto& d : demux) {
                 d->stop();
             }
@@ -535,6 +640,10 @@ int pdrouting::set_state(module_state_t state) {
             }
 
             for (auto& d : mux) {
+                d->start();
+            }
+
+            for (auto& d : o2m) {
                 d->start();
             }
             break;

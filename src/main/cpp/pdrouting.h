@@ -39,6 +39,15 @@ namespace module_pdrouting {
 }
 #endif
 
+struct pd {
+    std::string                     name;
+    std::string                     trigger_name;
+    ssize_t                         hash;
+    robotkernel::sp_process_data_t  dev;
+    robotkernel::sp_trigger_t       tr;
+}; 
+
+
 class trigger_cb : public robotkernel::trigger_base {
     public:
         std::function<void(void)> cb;
@@ -55,6 +64,41 @@ class pdrouting :
     public robotkernel::module_base
 {
     public:
+        /* 
+         * one_to_many:
+         *     pd_input_device: <name>
+         *     pd_output_devices:
+         *     -   <output_1>
+         *     -   <output_2>
+         *     -   <output_3>
+         *     -   <output_4>
+         */
+        class one_to_many :
+            public std::enable_shared_from_this<one_to_many>,
+            public robotkernel::trigger_base,
+            public robotkernel::pd_provider,
+            public robotkernel::pd_consumer 
+        {
+            public:
+                std::string name;
+                std::shared_ptr<pdrouting> parent;
+                struct pd pdin;
+                std::list<struct pd> pdout;
+
+            public:
+                one_to_many(std::shared_ptr<pdrouting> parent, const YAML::Node& node);
+                ~one_to_many();
+                
+                //! creating process data output and trigger
+                void start();
+
+                //! destroying process data output and trigger
+                void stop();
+
+                //! trigger tick
+                void tick();                
+        };
+
         /*
          *  demux:
          *      pd_input_device: <name>
@@ -95,13 +139,7 @@ class pdrouting :
                 std::shared_ptr<pdrouting> parent;
                 std::list<output> outputs;
                 std::string name; 
-
-                struct {
-                    std::string                     name;
-                    std::string                     trigger_name;
-                    ssize_t                         hash;
-                    robotkernel::sp_process_data_t  dev;
-                } pdin;
+                struct pd pdin;
 
             public:
                 //! construction
@@ -153,13 +191,7 @@ class pdrouting :
             private:
                 std::shared_ptr<pdrouting> parent;
                 std::list<input> inputs;
-
-                struct {
-                    std::string                     name;
-                    ssize_t                         hash;
-                    robotkernel::sp_process_data_t  dev;
-                    robotkernel::sp_trigger_t       tr;
-                } pdout;
+                struct pd pdout;
 
                 std::string name; 
                 std::string trigger_name;
@@ -197,6 +229,10 @@ class pdrouting :
         typedef std::shared_ptr<pd_mux> sp_pd_mux_t;
         typedef std::list<sp_pd_mux_t> mux_list_t;
         mux_list_t mux;
+
+        typedef std::shared_ptr<one_to_many> sp_o2m_t;
+        typedef std::list<sp_o2m_t> o2m_list_t;
+        o2m_list_t o2m;
 
         YAML::Node config;
     public:
