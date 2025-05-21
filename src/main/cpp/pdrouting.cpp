@@ -36,7 +36,6 @@
 
 MODULE_DEF(pdrouting, module_pdrouting::pdrouting)
 
-#define min(a, b) ((a) < (b) ? (a) : (b))
 using namespace robotkernel;
 using namespace std;
 using namespace module_pdrouting;
