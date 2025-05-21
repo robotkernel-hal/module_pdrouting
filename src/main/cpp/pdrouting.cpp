@@ -266,11 +266,8 @@ void pdrouting::pd_demux::start() {
 
         string pd_desc = output.desc == "" ? format_string("- uint8_t[%d]: data\n", output.len) : output.desc;
         string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), output.name.c_str());
-        output.pdtr  = make_shared<trigger>(tmp, "inputs");
-        output.pdout = make_shared<triple_buffer>(output.len, tmp, string("inputs"), pd_desc, output.pdtr->id());
+        output.pdout = make_shared<triple_buffer>(output.len, tmp, string("inputs"), pd_desc);
         output.hash  = output.pdout->set_provider(shared_from_this());
-
-        k.add_device(output.pdtr);
         k.add_device(output.pdout);
     }
 
@@ -292,7 +289,6 @@ void pdrouting::pd_demux::stop() {
     
     for (auto& output : outputs) {
         k.remove_device(output.pdout);
-        k.remove_device(output.pdtr);
 
         try {
             output.pdout->reset_provider(output.hash);
@@ -301,7 +297,6 @@ void pdrouting::pd_demux::stop() {
         }
 
         output.pdout = nullptr;
-        output.pdtr  = nullptr;
         output.hash  = 0;
     }
     
@@ -322,7 +317,7 @@ void pdrouting::pd_demux::tick() {
 
     for (auto& output : outputs) {
         output.pdout->write(output.hash, 0, &buf[pos], output.len);
-        output.pdtr->trigger_modules();
+        output.pdout->trigger();
         pos += output.len;
     }
 }
@@ -460,15 +455,12 @@ void pdrouting::pd_mux::start() {
 
         string pd_desc = input.desc == "" ? format_string("- uint8_t[%d]: data\n", input.len) : input.desc;
         string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), input.name.c_str());
-        input.pdtr  = make_shared<trigger>(tmp, "outputs");
-        input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc, input.pdtr->id());
+        input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc);
         input.hash  = input.pdin->set_consumer(shared_from_this());
-
-        k.add_device(input.pdtr);
         k.add_device(input.pdin);
 
         if (trigger_name == "") {
-            input.pdtr->add_trigger(collector_trigger_cbs[trigger_cbs_idx++]);
+            input.pdin->trigger_dev->add_trigger(collector_trigger_cbs[trigger_cbs_idx++]);
         }
     }
     
@@ -493,7 +485,6 @@ void pdrouting::pd_mux::stop() {
     
     for (auto& input : inputs) {
         k.remove_device(input.pdin);
-        k.remove_device(input.pdtr);
 
         try {
             input.pdin->reset_consumer(input.hash);
@@ -502,7 +493,6 @@ void pdrouting::pd_mux::stop() {
         }
 
         input.pdin  = nullptr;
-        input.pdtr  = nullptr;
         input.hash  = 0;
     }
     
@@ -528,7 +518,7 @@ void pdrouting::pd_mux::tick() {
 
     pdout.dev->push(pdout.hash);
     if (pdout.tr != nullptr) {
-        pdout.tr->trigger_modules();
+        //pdout.tr->trigger_modules();
     }
 }
 

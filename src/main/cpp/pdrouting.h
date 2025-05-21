@@ -122,7 +122,7 @@ class pdrouting :
                 class output {
                     public: 
                         output(const std::string& name, const uint32_t& len, const std::string& desc = "") :
-                            name(name), len(len), desc(desc), pdout(nullptr), pdtr(nullptr)
+                            name(name), len(len), desc(desc), pdout(nullptr)
                         {
                         }
 
@@ -131,7 +131,6 @@ class pdrouting :
                         std::string desc;
                         std::string gen_desc;
                         robotkernel::sp_process_data_t pdout;
-                        robotkernel::sp_trigger_t      pdtr;
                         ssize_t hash;
                 };
 
@@ -175,7 +174,7 @@ class pdrouting :
                     public: 
                         input(const std::string& name, const uint32_t& len, const std::string& desc = "") :
                             name(name), len(len), desc(desc),
-                            pdin(nullptr), pdtr(nullptr)
+                            pdin(nullptr)
                         {
                         }
 
@@ -184,7 +183,6 @@ class pdrouting :
                         std::string desc;
                         std::string gen_desc;
                         robotkernel::sp_process_data_t pdin;
-                        robotkernel::sp_trigger_t      pdtr;
                         ssize_t hash;
                 };
 
