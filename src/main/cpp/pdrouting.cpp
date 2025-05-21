@@ -550,16 +550,33 @@ pdrouting::~pdrouting() {
 
 void pdrouting::init() {
     if (config["demux"]) {
-        for (const auto& demux_node : config["demux"]) {
-            auto d = std::make_shared<pd_demux>(shared_from_this(), demux_node);
-            demux.push_back(d);
+        if (config["demux"].Type() == YAML::NodeType::Sequence) {
+            for (const auto& demux_node : config["demux"]) {
+                auto d = std::make_shared<pd_demux>(shared_from_this(), demux_node);
+                demux.push_back(d);
+            }
+        } else if (config["demux"].Type() == YAML::NodeType::Map) {
+            std::list<YAML::Node> instances;
+            parse_templates(config["demux"], instances);
+            for (const auto& demux_node : instances) {
+                demux.push_back(std::make_shared<pd_demux>(shared_from_this(), demux_node));
+            }
         }
     }
     
     if (config["mux"]) {
-        for (const auto& mux_node : config["mux"]) {
-            auto d = std::make_shared<pd_mux>(shared_from_this(), mux_node);
-            mux.push_back(d);
+        if (config["mux"].Type() == YAML::NodeType::Sequence) {
+            for (const auto& mux_node : config["mux"]) {
+                auto d = std::make_shared<pd_mux>(shared_from_this(), mux_node);
+                mux.push_back(d);
+            }
+        } else if (config["mux"].Type() == YAML::NodeType::Map) {
+            std::list<YAML::Node> instances;
+            parse_templates(config["mux"], instances);
+            for (const auto& mux_node : instances) {
+                printf("processing ...\n");
+                mux.push_back(std::make_shared<pd_mux>(shared_from_this(), mux_node));
+            }
         }
     }
 
