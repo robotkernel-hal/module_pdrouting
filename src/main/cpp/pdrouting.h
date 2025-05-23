@@ -44,21 +44,8 @@ struct pd {
     std::string                     trigger_name;
     ssize_t                         hash;
     robotkernel::sp_process_data_t  dev;
-    robotkernel::sp_trigger_t       tr;
 }; 
 
-
-class trigger_cb : public robotkernel::trigger_base {
-    public:
-        std::function<void(void)> cb;
-
-        trigger_cb(std::function<void(void)> cb) : cb(cb) {}
-
-        //! trigger function
-        void tick() { cb(); }
-};
-
-typedef std::shared_ptr<trigger_cb> sp_trigger_cb_t;
 class pdrouting :
     public std::enable_shared_from_this<pdrouting>,
     public robotkernel::module_base
@@ -184,11 +171,12 @@ class pdrouting :
                         std::string gen_desc;
                         robotkernel::sp_process_data_t pdin;
                         ssize_t hash;
+                        robotkernel::sp_trigger_cb_t collector_trigger_cb;
                 };
 
             private:
                 std::shared_ptr<pdrouting> parent;
-                std::list<input> inputs;
+                std::vector<input> inputs;
                 struct pd pdout;
 
                 std::string name; 
@@ -196,8 +184,8 @@ class pdrouting :
                 double expected_rate;
                     
                 robotkernel::sp_trigger_t collector_trigger;
-                std::shared_ptr<robotkernel::trigger_collector> collector;
-                std::vector<sp_trigger_cb_t> collector_trigger_cbs;
+                robotkernel::sp_trigger_collector_t collector;
+                
             public:
                 //! construction
                 /*!

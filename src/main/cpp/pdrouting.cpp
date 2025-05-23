@@ -47,14 +47,13 @@ pdrouting::one_to_many::one_to_many(std::shared_ptr<pdrouting> parent, const YAM
     parent(parent) 
 {
     name = get_as<string>(node, "name");
-    pdin.trigger_name = get_as<string>(node, "trigger_name", "");
     pdin.name = get_as<std::string>(node, "pd_input_device");
 
     YAML::Node pd_output_devices_node = get_as<YAML::Node>(node, "pd_output_devices");
 
     for (const auto& pd_node : pd_output_devices_node) {
         std::string pdout_name = pd_node.as<std::string>();
-        pdout.push_back({ pdout_name, "", 0, nullptr, nullptr });
+        pdout.push_back({ pdout_name, "", 0, nullptr });
     }
 
 }
@@ -73,10 +72,6 @@ void pdrouting::one_to_many::start() {
 
     size_t in_length = pdin.dev->length;
 
-    if (pdin.trigger_name == "") {
-        pdin.trigger_name = pdin.dev->clk_device;
-    }
-
     for (auto& tmp_pdout : pdout) {
         tmp_pdout.dev = k.get_process_data(tmp_pdout.name);
 
@@ -86,16 +81,9 @@ void pdrouting::one_to_many::start() {
         }
 
         tmp_pdout.hash = tmp_pdout.dev->set_provider(shared_from_this());
-
-        if (tmp_pdout.dev->clk_device != "") {
-            tmp_pdout.tr = k.get_trigger(tmp_pdout.dev->clk_device);
-        }
     }
 
-    if (pdin.trigger_name != "") {
-        pdin.tr = k.get_trigger(pdin.trigger_name);
-        pdin.tr->add_trigger(shared_from_this());
-    }
+    pdin.dev->trigger_dev->add_trigger(shared_from_this());
 }
                 
 //! trigger tick
@@ -104,28 +92,15 @@ void pdrouting::one_to_many::tick() {
 
     for (auto& tmp_pdout : pdout) {
         tmp_pdout.dev->write(tmp_pdout.hash, 0, buf, pdin.dev->length);
-        
-        if (tmp_pdout.tr) {
-            tmp_pdout.tr->trigger_modules();
-        }
+        tmp_pdout.dev->trigger();
     }
 }
 
 //! destroying process data output and trigger
 void pdrouting::one_to_many::stop() {
-    if (pdin.tr) {
-        pdin.tr->remove_trigger(shared_from_this());
-        pdin.tr = nullptr;
-    }
-
     for (auto& tmp_pdout : pdout) {
-        if (tmp_pdout.tr) {
-            tmp_pdout.tr = nullptr;
-        }
-
         tmp_pdout.dev->reset_provider(tmp_pdout.hash);
         tmp_pdout.hash = 0;
-
         tmp_pdout.dev = nullptr;
     }
     
@@ -193,7 +168,7 @@ size_t get_dt_size(const std::string& dt) {
 void pdrouting::pd_demux::start() {
     kernel& k = *kernel::get_instance();
 
-    parent->log(info, "%s try to get process data: %s\n", name.c_str(), pdin.name.c_str());
+    parent->log(info, "%s -> starting demuxer for %s\n", name.c_str(), pdin.name.c_str());
 
     pdin.dev  = k.get_process_data(pdin.name);
     pdin.hash = pdin.dev->set_consumer(shared_from_this());
@@ -271,21 +246,27 @@ void pdrouting::pd_demux::start() {
         k.add_device(output.pdout);
     }
 
-    if (pdin.trigger_name == "") {
-        pdin.trigger_name = pdin.dev->clk_device;
+    if (pdin.trigger_name != "") {
+        parent->log(info, "%s try to get trigger: %s\n", name.c_str(), pdin.trigger_name.c_str());
+        auto trigger_dev = k.get_trigger(pdin.trigger_name);
+        trigger_dev->add_trigger(shared_from_this());
+    } else {
+        pdin.dev->trigger_dev->add_trigger(shared_from_this());
     }
-
-    parent->log(info, "%s try to get trigger: %s\n", name.c_str(), pdin.trigger_name.c_str());
-    auto trigger_dev = k.get_trigger(pdin.trigger_name);
-    trigger_dev->add_trigger(shared_from_this());
 }
 
 //! destroying process data output and trigger
 void pdrouting::pd_demux::stop() {
     kernel& k = *kernel::get_instance();
+
+    parent->log(info, "%s -> stopping demuxer.\n", name.c_str());
     
-    auto trigger_dev = k.get_trigger(pdin.dev->clk_device);
-    trigger_dev->remove_trigger(shared_from_this());
+    if (pdin.trigger_name != "") {
+        auto trigger_dev = k.get_trigger(pdin.trigger_name);
+        trigger_dev->remove_trigger(shared_from_this());
+    } else {
+        pdin.dev->trigger_dev->remove_trigger(shared_from_this());
+    }
     
     for (auto& output : outputs) {
         k.remove_device(output.pdout);
@@ -363,11 +344,6 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
         collector_trigger = make_shared<trigger>(parent->name, name);
         collector = make_shared<trigger_collector>(inputs.size(), 1.0/expected_rate, 
                 std::bind(&trigger::trigger_modules, collector_trigger));
-
-        collector_trigger_cbs.resize(inputs.size());
-        for (unsigned i = 0; i < collector_trigger_cbs.size(); ++i) {
-            collector_trigger_cbs[i] = make_shared<trigger_cb>(std::bind(&trigger_collector::trigger_collect, collector, i));
-        }
     }
 }
                         
@@ -377,10 +353,6 @@ void pdrouting::pd_mux::start() {
 
     pdout.dev  = k.get_process_data(pdout.name);
     pdout.hash = pdout.dev->set_provider(shared_from_this());
-
-    if (pdout.dev->clk_device != "") {
-        pdout.tr = k.get_trigger(pdout.dev->clk_device);
-    }
 
     size_t act_len = 0;
     for (auto& input : inputs)
@@ -393,7 +365,8 @@ void pdrouting::pd_mux::start() {
     size_t skip_len = 0;
     bool gen_abort = false;
 
-    for (auto& input : inputs) {
+    for (unsigned idx = 0; idx < inputs.size(); ++idx) {
+        pd_mux::input& input = inputs[idx];
         size_t cur_skip = 0;
         act_len = 0;
 
@@ -447,8 +420,8 @@ void pdrouting::pd_mux::start() {
         input.gen_desc = desc_emitter.c_str();
     }
 
-    int trigger_cbs_idx = 0;
-    for (auto& input : inputs) {
+    for (unsigned idx = 0; idx < inputs.size(); ++idx) {
+        pd_mux::input& input = inputs[idx];
         if ((input.desc == "") && !gen_abort) {
             input.desc = input.gen_desc;
         }
@@ -460,7 +433,8 @@ void pdrouting::pd_mux::start() {
         k.add_device(input.pdin);
 
         if (trigger_name == "") {
-            input.pdin->trigger_dev->add_trigger(collector_trigger_cbs[trigger_cbs_idx++]);
+            input.collector_trigger_cb = make_shared<trigger_cb>(std::bind(&trigger_collector::trigger_collect, collector, idx));
+            input.pdin->trigger_dev->add_trigger(input.collector_trigger_cb);
         }
     }
     
@@ -517,9 +491,6 @@ void pdrouting::pd_mux::tick() {
     }
 
     pdout.dev->push(pdout.hash);
-    if (pdout.tr != nullptr) {
-        //pdout.tr->trigger_modules();
-    }
 }
 
 //! construction
