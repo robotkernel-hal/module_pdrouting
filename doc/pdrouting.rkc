@@ -12,22 +12,22 @@
 #########################################################
 # Process data demuxer configuration.
 demux:
-- # Demuxer name (prefix for demuxed process data).
-  name: elmo_0_fsoe_demux
+  # Demuxer name (prefix for demuxed process data).
+- name: elmo_0_fsoe_demux
 
   # Process data device to demux.
   pd_input_device: ethercat.slave_0.inputs.pd
 
   # Demux data outputs.
   outputs:
-  - # Demuxed process data infix name.
-    name: fsoe
+    # Demuxed process data infix name.
+  - name: fsoe
 
     # Demuxing next <len> bytes.
     len: 11
 
-  - # Demuxed process data infix name.
-    name: axis
+    # Demuxed process data infix name.
+  - name: axis
 
     # Demuxing next <len> bytes.
     len: 6 
@@ -35,25 +35,22 @@ demux:
 #########################################################
 # Process data Muxer configuration.
 mux:
-- # Muxer name (prefix for muxed process data)
-  name: elmo_0_fsoe_mux
+  # Muxer name (prefix for muxed process data)
+- name: elmo_0_fsoe_mux
 
   # Process data device to mux
   pd_output_device: ethercat.slave_0.outputs.pd
-
-  # Trigger device to be trigger when all muxing devices have data.
-  trigger_name: ethercat.slave_0.inputs.trigger
   
   # Mux data outputs.
   outputs:
-  - # Muxed process data infix name.
-    name: fsoe
+    # Muxed process data infix name.
+  - name: fsoe
 
     # Muxing next <len> bytes.
     len: 11
 
-  - # Muxed process data infix name.
-    name: axis
+    # Muxed process data infix name.
+  - name: axis
 
     # Muxing next <len> bytes.
     len: 6 

@@ -1,0 +1,61 @@
+# Configuration file for module_pdrouting.
+#
+# vi: set ft=yaml nowrap:
+# -*- mode: yaml -*-
+
+#########################################################
+# logging settings
+
+# Standard robotkernel module local loglevel.
+#loglevel: verbose
+
+#########################################################
+# Process data demuxer configuration.
+demux:
+  classes:
+    datagen_outputs:
+      name: $name               # Demuxer name (prefix for demuxed process data).
+      pd_input_device: $pdin    # Process data device to demux.
+      outputs:                  # Demux data outputs.
+      - name: axis              # Demuxed process data infix name.
+        len: 16                 # Demuxing next <len> bytes.
+
+  instances:
+  - { use_class: datagen_outputs, name: datagen_demux_0, pdin: datagen.slave_0.inputs.pd }
+  - { use_class: datagen_outputs, name: datagen_demux_1, pdin: datagen.slave_1.inputs.pd }
+  - { use_class: datagen_outputs, name: datagen_demux_2, pdin: datagen.slave_2.inputs.pd }
+  - { use_class: datagen_outputs, name: datagen_demux_3, pdin: datagen.slave_3.inputs.pd }
+  - { use_class: datagen_outputs, name: datagen_demux_4, pdin: datagen.slave_4.inputs.pd }
+  - { use_class: datagen_outputs, name: datagen_demux_5, pdin: datagen.slave_5.inputs.pd }
+  - { use_class: datagen_outputs, name: datagen_demux_6, pdin: datagen.slave_6.inputs.pd }
+
+#########################################################
+# Process data Muxer configuration.
+mux:
+  classes:
+    datagen_inputs:
+      name: $name               # Muxer name (prefix for muxed process data)
+      pd_output_device: $pdout  # Process data device to mux
+      inputs:                   # Mux data inputs.
+      - name: axis              # Muxed process data infix name.
+        len: 24                 # Muxing next <len> bytes.
+
+  instances:
+  - { use_class: datagen_inputs, name: datagen_mux_0, pdout: datagen.slave_0.outputs.pd }
+  - { use_class: datagen_inputs, name: datagen_mux_1, pdout: datagen.slave_1.outputs.pd }
+  - { use_class: datagen_inputs, name: datagen_mux_2, pdout: datagen.slave_2.outputs.pd }
+  - { use_class: datagen_inputs, name: datagen_mux_3, pdout: datagen.slave_3.outputs.pd }
+  - { use_class: datagen_inputs, name: datagen_mux_4, pdout: datagen.slave_4.outputs.pd }
+  - { use_class: datagen_inputs, name: datagen_mux_5, pdout: datagen.slave_5.outputs.pd }
+  - { use_class: datagen_inputs, name: datagen_mux_6, pdout: datagen.slave_6.outputs.pd }
+
+#########################################################
+# Process data one-to-many relationship
+#one_to_many:
+#  # Process data device containing inputs to distribute to 
+#  # all specified outputs.
+#  pd_input_device: ecat.slave_1.inputs.pd
+#
+#  # Process data outputs devices. 
+#  pd_output_devices:
+#  - ecat.slave_2.outputs.pd
