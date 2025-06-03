@@ -42,8 +42,6 @@ using namespace module_pdrouting;
 using namespace string_util;
                 
 pdrouting::one_to_many::one_to_many(std::shared_ptr<pdrouting> parent, const YAML::Node& node) :
-    pd_provider(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
-    pd_consumer(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
     parent(parent) 
 {
     name = get_as<string>(node, "name");
@@ -68,7 +66,8 @@ void pdrouting::one_to_many::start() {
     parent->log(info, "%s try to get process data: %s\n", name.c_str(), pdin.name.c_str());
 
     pdin.dev  = k.get_process_data(pdin.name);
-    pdin.hash = pdin.dev->set_consumer(shared_from_this());
+    pdin.consumer = make_shared<pd_consumer>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
+    pdin.dev->set_consumer(pdin.consumer);
 
     size_t in_length = pdin.dev->length;
 
@@ -80,7 +79,8 @@ void pdrouting::one_to_many::start() {
                     name.c_str(), tmp_pdout.name.c_str(), tmp_pdout.dev->length, in_length);
         }
 
-        tmp_pdout.hash = tmp_pdout.dev->set_provider(shared_from_this());
+        tmp_pdout.provider = make_shared<pd_provider>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
+        tmp_pdout.dev->set_provider(tmp_pdout.provider);
     }
 
     pdin.dev->trigger_dev->add_trigger(shared_from_this());
@@ -88,10 +88,10 @@ void pdrouting::one_to_many::start() {
                 
 //! trigger tick
 void pdrouting::one_to_many::tick() {
-    auto buf = pdin.dev->pop(pdin.hash);
+    auto buf = pdin.dev->pop(pdin.consumer);
 
     for (auto& tmp_pdout : pdout) {
-        tmp_pdout.dev->write(tmp_pdout.hash, 0, buf, pdin.dev->length);
+        tmp_pdout.dev->write(tmp_pdout.provider, 0, buf, pdin.dev->length);
         tmp_pdout.dev->trigger();
     }
 }
@@ -99,21 +99,18 @@ void pdrouting::one_to_many::tick() {
 //! destroying process data output and trigger
 void pdrouting::one_to_many::stop() {
     for (auto& tmp_pdout : pdout) {
-        tmp_pdout.dev->reset_provider(tmp_pdout.hash);
-        tmp_pdout.hash = 0;
+        tmp_pdout.dev->reset_provider(tmp_pdout.provider);
+        tmp_pdout.provider = nullptr;
         tmp_pdout.dev = nullptr;
     }
     
-    pdin.dev->reset_consumer(pdin.hash);
-    pdin.hash = 0;
+    pdin.dev->reset_consumer(pdin.consumer);
+    pdin.consumer = nullptr;
     pdin.dev = nullptr;
 }
 
 
 pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Node& node) :
-    pd_provider(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
-    pd_consumer(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
-    service_provider::process_data_inspection::base(parent->name, get_as<string>(node, "name")),
     parent(parent)
 {
     /* we will get sth like:
@@ -171,7 +168,8 @@ void pdrouting::pd_demux::start() {
     parent->log(info, "%s -> starting demuxer for %s\n", name.c_str(), pdin.name.c_str());
 
     pdin.dev  = k.get_process_data(pdin.name);
-    pdin.hash = pdin.dev->set_consumer(shared_from_this());
+    pdin.consumer = make_shared<pd_consumer>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
+    pdin.dev->set_consumer(pdin.consumer);
 
     size_t act_len = 0;
     for (auto& output : outputs)
@@ -242,8 +240,12 @@ void pdrouting::pd_demux::start() {
         string pd_desc = output.desc == "" ? format_string("- uint8_t[%d]: data\n", output.len) : output.desc;
         string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), output.name.c_str());
         output.pdout = make_shared<triple_buffer>(output.len, tmp, string("inputs"), pd_desc);
-        output.hash  = output.pdout->set_provider(shared_from_this());
+        output.provider = make_shared<pd_provider>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
+        output.pdout->set_provider(output.provider);
         k.add_device(output.pdout);
+        
+        output.pdout_inspection = make_shared<service_provider::process_data_inspection::pd_inspection>(tmp, "inputs", output.pdout); 
+        k.add_device(output.pdout_inspection);
     }
 
     if (pdin.trigger_name != "") {
@@ -267,46 +269,46 @@ void pdrouting::pd_demux::stop() {
     } else {
         pdin.dev->trigger_dev->remove_trigger(shared_from_this());
     }
-    
+
     for (auto& output : outputs) {
+        k.remove_device(output.pdout_inspection);
+        output.pdout_inspection = nullptr;
+    
         k.remove_device(output.pdout);
 
         try {
-            output.pdout->reset_provider(output.hash);
+            output.pdout->reset_provider(output.provider);
         } catch (exception& e) {
             parent->log(warning, "reseting provider failed, ignoring: %s\n", e.what()); 
         }
 
         output.pdout = nullptr;
-        output.hash  = 0;
+        output.provider = nullptr;
     }
     
     try {
-        pdin.dev->reset_consumer(pdin.hash);
+        pdin.dev->reset_consumer(pdin.consumer);
     } catch (exception& e) {
         parent->log(warning, "reseting consumer failed, ignoring: %s\n", e.what()); 
     }
 
-    pdin.hash = 0;
+    pdin.consumer = nullptr;
     pdin.dev  = nullptr;
 }
                 
 //! trigger tick
 void pdrouting::pd_demux::tick() {
     off_t pos = 0;
-    auto buf = pdin.dev->pop(pdin.hash);
+    auto buf = pdin.dev->pop(pdin.consumer);
 
     for (auto& output : outputs) {
-        output.pdout->write(output.hash, 0, &buf[pos], output.len);
+        output.pdout->write(output.provider, 0, &buf[pos], output.len);
         output.pdout->trigger();
         pos += output.len;
     }
 }
 
 pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& node) :
-    pd_provider(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
-    pd_consumer(format_string("%s.%s", parent->name.c_str(), get_as<string>(node, "name").c_str())),
-    service_provider::process_data_inspection::base(parent->name, get_as<string>(node, "name")),
     parent(parent)
 {
     /* we will get sth like:
@@ -352,7 +354,8 @@ void pdrouting::pd_mux::start() {
     kernel& k = *kernel::get_instance();
 
     pdout.dev  = k.get_process_data(pdout.name);
-    pdout.hash = pdout.dev->set_provider(shared_from_this());
+    pdout.provider = make_shared<pd_provider>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
+    pdout.dev->set_provider(pdout.provider);
 
     size_t act_len = 0;
     for (auto& input : inputs)
@@ -429,8 +432,12 @@ void pdrouting::pd_mux::start() {
         string pd_desc = input.desc == "" ? format_string("- uint8_t[%d]: data\n", input.len) : input.desc;
         string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), input.name.c_str());
         input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc);
-        input.hash  = input.pdin->set_consumer(shared_from_this());
+        input.consumer = make_shared<pd_consumer>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
+        input.pdin->set_consumer(input.consumer);
         k.add_device(input.pdin);
+
+        input.pdin_inspection = make_shared<service_provider::process_data_inspection::pd_inspection>(tmp, "outputs", input.pdin); 
+        k.add_device(input.pdin_inspection);
 
         if (trigger_name == "") {
             input.collector_trigger_cb = make_shared<trigger_cb>(std::bind(&trigger_collector::trigger_collect, collector, idx));
@@ -456,27 +463,30 @@ void pdrouting::pd_mux::stop() {
     } else {
         collector_trigger->remove_trigger(shared_from_this());
     }
-    
+
     for (auto& input : inputs) {
+        k.remove_device(input.pdin_inspection);
+        input.pdin_inspection = nullptr;
+    
         k.remove_device(input.pdin);
 
         try {
-            input.pdin->reset_consumer(input.hash);
+            input.pdin->reset_consumer(input.consumer);
         } catch (exception& e) {
             parent->log(warning, "reseting consumer failed, ignoring: %s\n", e.what()); 
         }
 
         input.pdin  = nullptr;
-        input.hash  = 0;
+        input.consumer  = nullptr;
     }
     
     try {
-        pdout.dev->reset_provider(pdout.hash);
+        pdout.dev->reset_provider(pdout.provider);
     } catch (exception& e) {
         parent->log(warning, "reseting provider failed, ignoring: %s\n", e.what()); 
     }
 
-    pdout.hash = 0;
+    pdout.provider = nullptr;
     pdout.dev  = nullptr;
 }
                 
@@ -485,12 +495,12 @@ void pdrouting::pd_mux::tick() {
     off_t pos = 0;
 
     for (auto& input : inputs) {
-        auto buf = input.pdin->pop(input.hash);
-        pdout.dev->write(pdout.hash, pos, buf, input.len, false);
+        auto buf = input.pdin->pop(input.consumer);
+        pdout.dev->write(pdout.provider, pos, buf, input.len, false);
         pos += input.len;
     }
 
-    pdout.dev->push(pdout.hash);
+    pdout.dev->push(pdout.provider);
 }
 
 //! construction

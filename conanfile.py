@@ -12,5 +12,5 @@ class MainProject(ConanFile):
     tool_requires = ["robotkernel_service_helper/[*]@robotkernel/stable"]
 
     def requirements(self):
-        self.requires("robotkernel/[~6]@robotkernel/snapshot")
-        self.requires("service_provider_process_data_inspection/[~6]@robotkernel/snapshot")
+        self.requires("robotkernel/[~6]@robotkernel/unstable")
+        self.requires("service_provider_process_data_inspection/[~6]@robotkernel/unstable")

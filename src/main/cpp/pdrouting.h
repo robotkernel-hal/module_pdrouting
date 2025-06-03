@@ -42,8 +42,9 @@ namespace module_pdrouting {
 struct pd {
     std::string                     name;
     std::string                     trigger_name;
-    ssize_t                         hash;
     robotkernel::sp_process_data_t  dev;
+    robotkernel::sp_pd_provider_t   provider;
+    robotkernel::sp_pd_consumer_t   consumer;
 }; 
 
 class pdrouting :
@@ -62,9 +63,7 @@ class pdrouting :
          */
         class one_to_many :
             public std::enable_shared_from_this<one_to_many>,
-            public robotkernel::trigger_base,
-            public robotkernel::pd_provider,
-            public robotkernel::pd_consumer 
+            public robotkernel::trigger_base
         {
             public:
                 std::string name;
@@ -100,10 +99,7 @@ class pdrouting :
 
         class pd_demux : 
             public std::enable_shared_from_this<pd_demux>,
-            public robotkernel::trigger_base,
-            public robotkernel::pd_provider,
-            public robotkernel::pd_consumer,
-            public service_provider::process_data_inspection::base
+            public robotkernel::trigger_base
         {
             public:
                 class output {
@@ -118,7 +114,8 @@ class pdrouting :
                         std::string desc;
                         std::string gen_desc;
                         robotkernel::sp_process_data_t pdout;
-                        ssize_t hash;
+                        robotkernel::sp_pd_provider_t provider;
+                        service_provider::process_data_inspection::sp_pd_inspection_t pdout_inspection;
                 };
 
             private:
@@ -151,10 +148,7 @@ class pdrouting :
         
         class pd_mux : 
             public std::enable_shared_from_this<pd_mux>,
-            public robotkernel::trigger_base,
-            public robotkernel::pd_provider,
-            public robotkernel::pd_consumer,
-            public service_provider::process_data_inspection::base
+            public robotkernel::trigger_base
         {
             public:
                 class input {
@@ -170,7 +164,8 @@ class pdrouting :
                         std::string desc;
                         std::string gen_desc;
                         robotkernel::sp_process_data_t pdin;
-                        ssize_t hash;
+                        robotkernel::sp_pd_consumer_t consumer;
+                        service_provider::process_data_inspection::sp_pd_inspection_t pdin_inspection;
                         robotkernel::sp_trigger_cb_t collector_trigger_cb;
                 };
 
