@@ -25,9 +25,8 @@
 #ifndef MODULE_PDROUTING_H
 #define MODULE_PDROUTING_H
 
-#include "robotkernel/module.h"
 #include "robotkernel/module_base.h"
-#include "robotkernel/kernel.h"
+#include "robotkernel/robotkernel.h"
 #include "robotkernel/trigger.h"
 #include "robotkernel/trigger_collector.h"
 #include "robotkernel/process_data.h"

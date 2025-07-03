@@ -61,18 +61,16 @@ pdrouting::one_to_many::~one_to_many() {
 
 //! creating process data output and trigger
 void pdrouting::one_to_many::start() {
-    kernel& k = *kernel::get_instance();
-
     parent->log(info, "%s try to get process data: %s\n", name.c_str(), pdin.name.c_str());
 
-    pdin.dev  = k.get_process_data(pdin.name);
+    pdin.dev  = robotkernel::get_device<process_data>(pdin.name);
     pdin.consumer = make_shared<pd_consumer>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
     pdin.dev->set_consumer(pdin.consumer);
 
     size_t in_length = pdin.dev->length;
 
     for (auto& tmp_pdout : pdout) {
-        tmp_pdout.dev = k.get_process_data(tmp_pdout.name);
+        tmp_pdout.dev = robotkernel::get_device<process_data>(tmp_pdout.name);
 
         if (tmp_pdout.dev->length != in_length) {
             throw str_exception("%s: pdout %s has wrong length! (need %d bytes, got %d bytes)", 
@@ -163,11 +161,9 @@ size_t get_dt_size(const std::string& dt) {
 
 //! creating process data output and trigger
 void pdrouting::pd_demux::start() {
-    kernel& k = *kernel::get_instance();
-
     parent->log(info, "%s -> starting demuxer for %s\n", name.c_str(), pdin.name.c_str());
 
-    pdin.dev  = k.get_process_data(pdin.name);
+    pdin.dev  = robotkernel::get_device<process_data>(pdin.name);
     pdin.consumer = make_shared<pd_consumer>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
     pdin.dev->set_consumer(pdin.consumer);
 
@@ -242,15 +238,15 @@ void pdrouting::pd_demux::start() {
         output.pdout = make_shared<triple_buffer>(output.len, tmp, string("inputs"), pd_desc);
         output.provider = make_shared<pd_provider>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
         output.pdout->set_provider(output.provider);
-        k.add_device(output.pdout);
+        robotkernel::add_device(output.pdout);
         
         output.pdout_inspection = make_shared<service_provider::process_data_inspection::pd_inspection>(tmp, "inputs", output.pdout); 
-        k.add_device(output.pdout_inspection);
+        robotkernel::add_device(output.pdout_inspection);
     }
 
     if (pdin.trigger_name != "") {
         parent->log(info, "%s try to get trigger: %s\n", name.c_str(), pdin.trigger_name.c_str());
-        auto trigger_dev = k.get_trigger(pdin.trigger_name);
+        auto trigger_dev = robotkernel::get_device<trigger>(pdin.trigger_name);
         trigger_dev->add_trigger(shared_from_this());
     } else {
         pdin.dev->trigger_dev->add_trigger(shared_from_this());
@@ -259,22 +255,20 @@ void pdrouting::pd_demux::start() {
 
 //! destroying process data output and trigger
 void pdrouting::pd_demux::stop() {
-    kernel& k = *kernel::get_instance();
-
     parent->log(info, "%s -> stopping demuxer.\n", name.c_str());
     
     if (pdin.trigger_name != "") {
-        auto trigger_dev = k.get_trigger(pdin.trigger_name);
+        auto trigger_dev = robotkernel::get_device<trigger>(pdin.trigger_name);
         trigger_dev->remove_trigger(shared_from_this());
     } else {
         pdin.dev->trigger_dev->remove_trigger(shared_from_this());
     }
 
     for (auto& output : outputs) {
-        k.remove_device(output.pdout_inspection);
+        robotkernel::remove_device(output.pdout_inspection);
         output.pdout_inspection = nullptr;
     
-        k.remove_device(output.pdout);
+        robotkernel::remove_device(output.pdout);
 
         try {
             output.pdout->reset_provider(output.provider);
@@ -345,15 +339,13 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
         // using trigger_collector
         collector_trigger = make_shared<trigger>(parent->name, name);
         collector = make_shared<trigger_collector>(inputs.size(), 1.0/expected_rate, 
-                std::bind(&trigger::trigger_modules, collector_trigger));
+                std::bind(&trigger::do_trigger, collector_trigger));
     }
 }
                         
 //! creating process data input and trigger
 void pdrouting::pd_mux::start() {
-    kernel& k = *kernel::get_instance();
-
-    pdout.dev  = k.get_process_data(pdout.name);
+    pdout.dev  = robotkernel::get_device<process_data>(pdout.name);
     pdout.provider = make_shared<pd_provider>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
     pdout.dev->set_provider(pdout.provider);
 
@@ -434,10 +426,10 @@ void pdrouting::pd_mux::start() {
         input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc);
         input.consumer = make_shared<pd_consumer>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
         input.pdin->set_consumer(input.consumer);
-        k.add_device(input.pdin);
+        robotkernel::add_device(input.pdin);
 
         input.pdin_inspection = make_shared<service_provider::process_data_inspection::pd_inspection>(tmp, "outputs", input.pdin); 
-        k.add_device(input.pdin_inspection);
+        robotkernel::add_device(input.pdin_inspection);
 
         if (trigger_name == "") {
             input.collector_trigger_cb = make_shared<trigger_cb>(std::bind(&trigger_collector::trigger_collect, collector, idx));
@@ -446,7 +438,7 @@ void pdrouting::pd_mux::start() {
     }
     
     if (trigger_name != "") {
-        auto trigger_dev = k.get_trigger(trigger_name);
+        auto trigger_dev = robotkernel::get_device<trigger>(trigger_name);
         trigger_dev->add_trigger(shared_from_this());
     } else {
         collector_trigger->add_trigger(shared_from_this());
@@ -455,20 +447,18 @@ void pdrouting::pd_mux::start() {
 
 //! destroying process data input and trigger
 void pdrouting::pd_mux::stop() {
-    kernel& k = *kernel::get_instance();
-    
     if (trigger_name != "") {
-        auto trigger_dev = k.get_trigger(trigger_name);
+        auto trigger_dev = robotkernel::get_device<trigger>(trigger_name);
         trigger_dev->remove_trigger(shared_from_this());
     } else {
         collector_trigger->remove_trigger(shared_from_this());
     }
 
     for (auto& input : inputs) {
-        k.remove_device(input.pdin_inspection);
+        robotkernel::remove_device(input.pdin_inspection);
         input.pdin_inspection = nullptr;
     
-        k.remove_device(input.pdin);
+        robotkernel::remove_device(input.pdin);
 
         try {
             input.pdin->reset_consumer(input.consumer);
