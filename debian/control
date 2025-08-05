@@ -1,0 +1,16 @@
+Source: module-pdrouting
+Priority: optional
+Maintainer: Robert Burger <robert.burger@dlr.de>
+Build-Depends: debhelper-compat (= 13), autotools-dev
+Standards-Version: 4.5.1
+Section: libs
+Homepage: https://www.burger-system.de/robotkernel/module_pdrouting
+Vcs-Browser: https://github.com/robotkernel-hal/module_pdrouting.git
+Vcs-Git: https://github.com/robotkernel-hal/module_pdrouting.git
+Rules-Requires-Root: no
+
+Package: module-pdrouting
+Architecture: any
+Multi-Arch: same
+Depends: robotkernel, ${misc:Depends}
+Description: Robotkernel module to mux or demux process data devices.

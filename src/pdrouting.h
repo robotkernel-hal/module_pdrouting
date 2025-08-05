@@ -6,20 +6,21 @@
 // vim: tabstop=4 softtabstop=4 shiftwidth=4 expandtab:
 
 /*
- * This file is part of robotkernel.
+ * This file is part of module_pdrouting.
  *
- * robotkernel is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * robotkernel is distributed in the hope that it will be useful,
+ * module_pdrouting is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ * 
+ * module_pdrouting is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with robotkernel.  If not, see <http://www.gnu.org/licenses/>.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with module_pdrouting; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
 
 #ifndef MODULE_PDROUTING_H
@@ -31,12 +32,9 @@
 #include "robotkernel/trigger_collector.h"
 #include "robotkernel/process_data.h"
 
-#include "service_provider/process_data_inspection/base.h"
+#include "service_provider_process_data_inspection/base.h"
 
 namespace module_pdrouting {
-#ifdef EMACS
-}
-#endif
 
 struct pd {
     std::string                     name;
@@ -114,7 +112,7 @@ class pdrouting :
                         std::string gen_desc;
                         robotkernel::sp_process_data_t pdout;
                         robotkernel::sp_pd_provider_t provider;
-                        service_provider::process_data_inspection::sp_pd_inspection_t pdout_inspection;
+                        service_provider_process_data_inspection::sp_pd_inspection_t pdout_inspection;
                 };
 
             private:
@@ -139,10 +137,6 @@ class pdrouting :
 
                 //! trigger tick
                 void tick();                
-                
-                // process data inspection
-                void get_pdin(service_provider::process_data_inspection::pd_t& pd) {};
-                void get_pdout(service_provider::process_data_inspection::pd_t& pd) {};
         };
         
         class pd_mux : 
@@ -164,7 +158,7 @@ class pdrouting :
                         std::string gen_desc;
                         robotkernel::sp_process_data_t pdin;
                         robotkernel::sp_pd_consumer_t consumer;
-                        service_provider::process_data_inspection::sp_pd_inspection_t pdin_inspection;
+                        service_provider_process_data_inspection::sp_pd_inspection_t pdin_inspection;
                         robotkernel::sp_trigger_cb_t collector_trigger_cb;
                 };
 
@@ -196,10 +190,6 @@ class pdrouting :
 
                 //! trigger tick
                 void tick();                
-                
-                // process data inspection
-                void get_pdin(service_provider::process_data_inspection::pd_t& pd) {};
-                void get_pdout(service_provider::process_data_inspection::pd_t& pd) {};
         };
 
         typedef std::shared_ptr<pd_demux> sp_pd_demux_t;
@@ -236,9 +226,6 @@ class pdrouting :
         int set_state(module_state_t state);
 };
 
-#ifdef EMACS
-{
-#endif
 }; // namespace module_pdrouting
 
 #endif // MODULE_PDROUTING_H

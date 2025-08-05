@@ -8,23 +8,22 @@
 // vim: tabstop=4 softtabstop=4 shiftwidth=4 expandtab:
 
 /*
- * This file is part of robotkernel.
+ * This file is part of module_pdrouting.
  *
- * robotkernel is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * robotkernel is distributed in the hope that it will be useful,
+ * module_pdrouting is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 3 of the License, or (at your option) any later version.
+ * 
+ * module_pdrouting is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with robotkernel.  If not, see <http://www.gnu.org/licenses/>.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ * 
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with module_pdrouting; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  */
-
-#include <string_util/string_util.h>
 
 #include "pdrouting.h"
 #include "robotkernel/exceptions.h"
@@ -39,7 +38,6 @@ MODULE_DEF(pdrouting, module_pdrouting::pdrouting)
 using namespace robotkernel;
 using namespace std;
 using namespace module_pdrouting;
-using namespace string_util;
                 
 pdrouting::one_to_many::one_to_many(std::shared_ptr<pdrouting> parent, const YAML::Node& node) :
     parent(parent) 
@@ -64,7 +62,7 @@ void pdrouting::one_to_many::start() {
     parent->log(info, "%s try to get process data: %s\n", name.c_str(), pdin.name.c_str());
 
     pdin.dev  = robotkernel::get_device<process_data>(pdin.name);
-    pdin.consumer = make_shared<pd_consumer>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
+    pdin.consumer = make_shared<pd_consumer>(string_printf("%s.%s", parent->name.c_str(), name.c_str()));
     pdin.dev->set_consumer(pdin.consumer);
 
     size_t in_length = pdin.dev->length;
@@ -73,11 +71,11 @@ void pdrouting::one_to_many::start() {
         tmp_pdout.dev = robotkernel::get_device<process_data>(tmp_pdout.name);
 
         if (tmp_pdout.dev->length != in_length) {
-            throw str_exception("%s: pdout %s has wrong length! (need %d bytes, got %d bytes)", 
-                    name.c_str(), tmp_pdout.name.c_str(), tmp_pdout.dev->length, in_length);
+            throw std::runtime_error(string_printf("%s: pdout %s has wrong length! (need %d bytes, got %d bytes)", 
+                    name.c_str(), tmp_pdout.name.c_str(), tmp_pdout.dev->length, in_length));
         }
 
-        tmp_pdout.provider = make_shared<pd_provider>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
+        tmp_pdout.provider = make_shared<pd_provider>(string_printf("%s.%s", parent->name.c_str(), name.c_str()));
         tmp_pdout.dev->set_provider(tmp_pdout.provider);
     }
 
@@ -164,7 +162,7 @@ void pdrouting::pd_demux::start() {
     parent->log(info, "%s -> starting demuxer for %s\n", name.c_str(), pdin.name.c_str());
 
     pdin.dev  = robotkernel::get_device<process_data>(pdin.name);
-    pdin.consumer = make_shared<pd_consumer>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
+    pdin.consumer = make_shared<pd_consumer>(string_printf("%s.%s", parent->name.c_str(), name.c_str()));
     pdin.dev->set_consumer(pdin.consumer);
 
     size_t act_len = 0;
@@ -172,8 +170,8 @@ void pdrouting::pd_demux::start() {
         act_len += output.len;
 
     if (act_len > pdin.dev->length)
-        throw str_exception("demuxer %s length mismatch: pd %s has %u bytes, "
-                "we need %u bytes\n", name.c_str(), pdin.name.c_str(), pdin.dev->length, act_len);
+        throw std::runtime_error(string_printf("demuxer %s length mismatch: pd %s has %u bytes, "
+                "we need %u bytes\n", name.c_str(), pdin.name.c_str(), pdin.dev->length, act_len));
 
     size_t skip_len = 0;
     bool gen_abort = false;
@@ -233,14 +231,14 @@ void pdrouting::pd_demux::start() {
             output.desc = output.gen_desc;
         }
 
-        string pd_desc = output.desc == "" ? format_string("- uint8_t[%d]: data\n", output.len) : output.desc;
-        string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), output.name.c_str());
+        string pd_desc = output.desc == "" ? string_printf("- uint8_t[%d]: data\n", output.len) : output.desc;
+        string tmp = string_printf("%s.%s.%s", parent->name.c_str(), name.c_str(), output.name.c_str());
         output.pdout = make_shared<triple_buffer>(output.len, tmp, string("inputs"), pd_desc);
-        output.provider = make_shared<pd_provider>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
+        output.provider = make_shared<pd_provider>(string_printf("%s.%s", parent->name.c_str(), name.c_str()));
         output.pdout->set_provider(output.provider);
         robotkernel::add_device(output.pdout);
         
-        output.pdout_inspection = make_shared<service_provider::process_data_inspection::pd_inspection>(tmp, "inputs", output.pdout); 
+        output.pdout_inspection = make_shared<service_provider_process_data_inspection::pd_inspection>(tmp, "inputs", output.pdout); 
         robotkernel::add_device(output.pdout_inspection);
     }
 
@@ -346,7 +344,7 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
 //! creating process data input and trigger
 void pdrouting::pd_mux::start() {
     pdout.dev  = robotkernel::get_device<process_data>(pdout.name);
-    pdout.provider = make_shared<pd_provider>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
+    pdout.provider = make_shared<pd_provider>(string_printf("%s.%s", parent->name.c_str(), name.c_str()));
     pdout.dev->set_provider(pdout.provider);
 
     size_t act_len = 0;
@@ -354,8 +352,8 @@ void pdrouting::pd_mux::start() {
         act_len += input.len;
 
     if (act_len > pdout.dev->length)
-        throw str_exception("muxer %s length mismatch: pd %s has %u bytes, "
-                "we need %u bytes\n", name.c_str(), pdout.name.c_str(), pdout.dev->length, act_len);
+        throw std::runtime_error(string_printf("muxer %s length mismatch: pd %s has %u bytes, "
+                "we need %u bytes\n", name.c_str(), pdout.name.c_str(), pdout.dev->length, act_len));
     
     size_t skip_len = 0;
     bool gen_abort = false;
@@ -421,14 +419,14 @@ void pdrouting::pd_mux::start() {
             input.desc = input.gen_desc;
         }
 
-        string pd_desc = input.desc == "" ? format_string("- uint8_t[%d]: data\n", input.len) : input.desc;
-        string tmp = format_string("%s.%s.%s", parent->name.c_str(), name.c_str(), input.name.c_str());
+        string pd_desc = input.desc == "" ? string_printf("- uint8_t[%d]: data\n", input.len) : input.desc;
+        string tmp = string_printf("%s.%s.%s", parent->name.c_str(), name.c_str(), input.name.c_str());
         input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc);
-        input.consumer = make_shared<pd_consumer>(format_string("%s.%s", parent->name.c_str(), name.c_str()));
+        input.consumer = make_shared<pd_consumer>(string_printf("%s.%s", parent->name.c_str(), name.c_str()));
         input.pdin->set_consumer(input.consumer);
         robotkernel::add_device(input.pdin);
 
-        input.pdin_inspection = make_shared<service_provider::process_data_inspection::pd_inspection>(tmp, "outputs", input.pdin); 
+        input.pdin_inspection = make_shared<service_provider_process_data_inspection::pd_inspection>(tmp, "outputs", input.pdin); 
         robotkernel::add_device(input.pdin_inspection);
 
         if (trigger_name == "") {
