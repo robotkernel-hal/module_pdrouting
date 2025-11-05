@@ -12,7 +12,7 @@ class MainProject(ConanFile):
     tool_requires = ["robotkernel_service_helper/[~6]@robotkernel/unstable"]
     
     def source(self):
-        self.run(f"sed 's|PACKAGE_VERSION|$VERSION|' configure.ac.in > configure.ac")
+        self.run(f"sed 's/AC_INIT(.*/AC_INIT([{self.name}], [{self.version}], [{self.author}])/' configure.ac.in > configure.ac")
 
     def requirements(self):
         self.requires("robotkernel/[~6]@robotkernel/unstable")
