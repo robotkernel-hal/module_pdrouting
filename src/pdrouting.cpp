@@ -121,6 +121,7 @@ pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Nod
     name = get_as<string>(node, "name");
     pdin.trigger_name = get_as<string>(node, "trigger_name", "");
     pdin.name = get_as<string>(node, "pd_input_device");
+    zero_copy = get_as<bool>(node, "zero_copy", false);
 
     parent->log(verbose, "%s got pd_input_device %s\n", name.c_str(), pdin.name.c_str());
 
@@ -233,7 +234,11 @@ void pdrouting::pd_demux::start() {
 
         string pd_desc = output.desc == "" ? string_printf("- uint8_t[%d]: data\n", output.len) : output.desc;
         string tmp = string_printf("%s.%s.%s", parent->name.c_str(), name.c_str(), output.name.c_str());
-        output.pdout = make_shared<triple_buffer>(output.len, tmp, string("inputs"), pd_desc);
+        if (zero_copy) {
+            output.pdout = make_shared<pointer_buffer>(output.len, nullptr, tmp, string("inputs"), pd_desc);
+        } else {
+            output.pdout = make_shared<triple_buffer>(output.len, tmp, string("inputs"), pd_desc);
+        }
         output.provider = make_shared<pd_provider>(string_printf("%s.%s", parent->name.c_str(), name.c_str()));
         output.pdout->set_provider(output.provider);
         robotkernel::add_device(output.pdout);
@@ -294,8 +299,12 @@ void pdrouting::pd_demux::tick() {
     auto buf = pdin.dev->pop(pdin.consumer);
 
     for (auto& output : outputs) {
-        output.pdout->write(output.provider, 0, &buf[pos], output.len);
-        output.pdout->trigger();
+        if (zero_copy) {
+            dynamic_pointer_cast<pointer_buffer>(output.pdout)->set_ptr(output.provider, &buf[pos]);
+        } else {
+            output.pdout->write(output.provider, 0, &buf[pos], output.len);
+        }
+
         pos += output.len;
     }
 }
@@ -317,6 +326,7 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
     name = get_as<string>(node, "name");
     trigger_name = get_as<string>(node, "trigger_name", "");
     expected_rate = get_as<int>(node, "expected_rate", 1);
+    zero_copy = get_as<bool>(node, "zero_copy", false);
 
     parent->log(verbose, "%s got pd_output_device %s trigger_name %s\n", name.c_str(), 
             pdout.name.c_str(), trigger_name.c_str());
@@ -413,6 +423,8 @@ void pdrouting::pd_mux::start() {
         input.gen_desc = desc_emitter.c_str();
     }
 
+    off_t pos = 0;
+    auto buf = pdout.dev->next(pdout.provider);
     for (unsigned idx = 0; idx < inputs.size(); ++idx) {
         pd_mux::input& input = inputs[idx];
         if ((input.desc == "") && !gen_abort) {
@@ -421,7 +433,12 @@ void pdrouting::pd_mux::start() {
 
         string pd_desc = input.desc == "" ? string_printf("- uint8_t[%d]: data\n", input.len) : input.desc;
         string tmp = string_printf("%s.%s.%s", parent->name.c_str(), name.c_str(), input.name.c_str());
-        input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc);
+        if (zero_copy) {
+            input.pdin  = make_shared<pointer_buffer>(input.len, &buf[pos], tmp, string("outputs"), pd_desc);
+            pos += input.len;
+        } else {
+            input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc);
+        }
         input.consumer = make_shared<pd_consumer>(string_printf("%s.%s", parent->name.c_str(), name.c_str()));
         input.pdin->set_consumer(input.consumer);
         robotkernel::add_device(input.pdin);
@@ -482,13 +499,24 @@ void pdrouting::pd_mux::stop() {
 void pdrouting::pd_mux::tick() {
     off_t pos = 0;
 
-    for (auto& input : inputs) {
-        auto buf = input.pdin->pop(input.consumer);
-        pdout.dev->write(pdout.provider, pos, buf, input.len, false);
-        pos += input.len;
-    }
+    if (zero_copy) {
+        pdout.dev->push(pdout.provider);
+        auto buf = pdout.dev->next(pdout.provider);
+    
+        for (auto& input : inputs) {
+            dynamic_pointer_cast<pointer_buffer>(input.pdin)->set_ptr(input.consumer, &buf[pos]);
+            pos += input.len;
+        }
+    } else {
+        for (auto& input : inputs) {
+            auto buf = input.pdin->pop(input.consumer);
+            pdout.dev->write(pdout.provider, pos, buf, input.len, false);
 
-    pdout.dev->push(pdout.provider);
+            pos += input.len;
+        }
+    
+        pdout.dev->push(pdout.provider);
+    }
 }
 
 //! construction

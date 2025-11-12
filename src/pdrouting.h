@@ -120,6 +120,7 @@ class pdrouting :
                 std::list<output> outputs;
                 std::string name; 
                 struct pd pdin;
+                bool zero_copy = false;
 
             public:
                 //! construction
@@ -170,6 +171,7 @@ class pdrouting :
                 std::string name; 
                 std::string trigger_name;
                 double expected_rate;
+                bool zero_copy = false;
                     
                 robotkernel::sp_trigger_t collector_trigger;
                 robotkernel::sp_trigger_collector_t collector;
