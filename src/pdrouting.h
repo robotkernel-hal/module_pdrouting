@@ -45,7 +45,7 @@ struct pd {
 }; 
 
 class pdrouting :
-    public std::enable_shared_from_this<pdrouting>,
+    public virtual robotkernel::shared_base,
     public robotkernel::module_base
 {
     public:
@@ -59,7 +59,7 @@ class pdrouting :
          *     -   <output_4>
          */
         class one_to_many :
-            public std::enable_shared_from_this<one_to_many>,
+            public virtual robotkernel::shared_base,
             public robotkernel::trigger_base
         {
             public:
@@ -95,7 +95,7 @@ class pdrouting :
          */
 
         class pd_demux : 
-            public std::enable_shared_from_this<pd_demux>,
+            public virtual robotkernel::shared_base,
             public robotkernel::trigger_base
         {
             public:
@@ -141,7 +141,7 @@ class pdrouting :
         };
         
         class pd_mux : 
-            public std::enable_shared_from_this<pd_mux>,
+            public virtual robotkernel::shared_base,
             public robotkernel::trigger_base
         {
             public:

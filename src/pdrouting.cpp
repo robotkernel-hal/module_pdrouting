@@ -79,7 +79,7 @@ void pdrouting::one_to_many::start() {
         tmp_pdout.dev->set_provider(tmp_pdout.provider);
     }
 
-    pdin.dev->trigger_dev->add_trigger(shared_from_this());
+    pdin.dev->trigger_dev->add_trigger(shared_from_this_as<trigger_base>());
 }
                 
 //! trigger tick
@@ -250,9 +250,9 @@ void pdrouting::pd_demux::start() {
     if (pdin.trigger_name != "") {
         parent->log(info, "%s try to get trigger: %s\n", name.c_str(), pdin.trigger_name.c_str());
         auto trigger_dev = robotkernel::get_device<trigger>(pdin.trigger_name);
-        trigger_dev->add_trigger(shared_from_this());
+        trigger_dev->add_trigger(shared_from_this_as<trigger_base>());
     } else {
-        pdin.dev->trigger_dev->add_trigger(shared_from_this());
+        pdin.dev->trigger_dev->add_trigger(shared_from_this_as<trigger_base>());
     }
 }
 
@@ -262,9 +262,9 @@ void pdrouting::pd_demux::stop() {
     
     if (pdin.trigger_name != "") {
         auto trigger_dev = robotkernel::get_device<trigger>(pdin.trigger_name);
-        trigger_dev->remove_trigger(shared_from_this());
+        trigger_dev->remove_trigger(shared_from_this_as<trigger_base>());
     } else {
-        pdin.dev->trigger_dev->remove_trigger(shared_from_this());
+        pdin.dev->trigger_dev->remove_trigger(shared_from_this_as<trigger_base>());
     }
 
     for (auto& output : outputs) {
@@ -454,9 +454,9 @@ void pdrouting::pd_mux::start() {
     
     if (trigger_name != "") {
         auto trigger_dev = robotkernel::get_device<trigger>(trigger_name);
-        trigger_dev->add_trigger(shared_from_this());
+        trigger_dev->add_trigger(shared_from_this_as<trigger_base>());
     } else {
-        collector_trigger->add_trigger(shared_from_this());
+        collector_trigger->add_trigger(shared_from_this_as<trigger_base>());
     }
 }
 
@@ -464,9 +464,9 @@ void pdrouting::pd_mux::start() {
 void pdrouting::pd_mux::stop() {
     if (trigger_name != "") {
         auto trigger_dev = robotkernel::get_device<trigger>(trigger_name);
-        trigger_dev->remove_trigger(shared_from_this());
+        trigger_dev->remove_trigger(shared_from_this_as<trigger_base>());
     } else {
-        collector_trigger->remove_trigger(shared_from_this());
+        collector_trigger->remove_trigger(shared_from_this_as<trigger_base>());
     }
 
     for (auto& input : inputs) {
@@ -538,14 +538,14 @@ void pdrouting::init() {
     if (config["demux"]) {
         if (config["demux"].Type() == YAML::NodeType::Sequence) {
             for (const auto& demux_node : config["demux"]) {
-                auto d = std::make_shared<pd_demux>(shared_from_this(), demux_node);
+                auto d = std::make_shared<pd_demux>(shared_from_this_as<pdrouting>(), demux_node);
                 demux.push_back(d);
             }
         } else if (config["demux"].Type() == YAML::NodeType::Map) {
             std::list<YAML::Node> instances;
             parse_templates(config["demux"], instances);
             for (const auto& demux_node : instances) {
-                demux.push_back(std::make_shared<pd_demux>(shared_from_this(), demux_node));
+                demux.push_back(std::make_shared<pd_demux>(shared_from_this_as<pdrouting>(), demux_node));
             }
         }
     }
@@ -553,7 +553,7 @@ void pdrouting::init() {
     if (config["mux"]) {
         if (config["mux"].Type() == YAML::NodeType::Sequence) {
             for (const auto& mux_node : config["mux"]) {
-                auto d = std::make_shared<pd_mux>(shared_from_this(), mux_node);
+                auto d = std::make_shared<pd_mux>(shared_from_this_as<pdrouting>(), mux_node);
                 mux.push_back(d);
             }
         } else if (config["mux"].Type() == YAML::NodeType::Map) {
@@ -561,14 +561,14 @@ void pdrouting::init() {
             parse_templates(config["mux"], instances);
             for (const auto& mux_node : instances) {
                 printf("processing ...\n");
-                mux.push_back(std::make_shared<pd_mux>(shared_from_this(), mux_node));
+                mux.push_back(std::make_shared<pd_mux>(shared_from_this_as<pdrouting>(), mux_node));
             }
         }
     }
 
     if (config["one_to_many"]) {
         for (const auto& o2m_node : config["one_to_many"]) {
-            auto d = std::make_shared<one_to_many>(shared_from_this(), o2m_node);
+            auto d = std::make_shared<one_to_many>(shared_from_this_as<pdrouting>(), o2m_node);
             o2m.push_back(d);
         }
     }
