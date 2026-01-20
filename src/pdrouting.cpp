@@ -36,6 +36,7 @@
 MODULE_DEF(pdrouting, module_pdrouting::pdrouting)
 
 using namespace robotkernel;
+using namespace robotkernel::helpers;
 using namespace std;
 using namespace module_pdrouting;
                 
@@ -71,7 +72,7 @@ void pdrouting::one_to_many::start() {
         tmp_pdout.dev = robotkernel::get_device<process_data>(tmp_pdout.name);
 
         if (tmp_pdout.dev->length != in_length) {
-            throw std::runtime_error(string_printf("%s: pdout %s has wrong length! (need %d bytes, got %d bytes)", 
+            throw std::runtime_error(string_printf("%s: pdout %s has wrong length! (need %zu bytes, got %zu bytes)", 
                     name.c_str(), tmp_pdout.name.c_str(), tmp_pdout.dev->length, in_length));
         }
 
@@ -171,8 +172,8 @@ void pdrouting::pd_demux::start() {
         act_len += output.len;
 
     if (act_len > pdin.dev->length)
-        throw std::runtime_error(string_printf("demuxer %s length mismatch: pd %s has %u bytes, "
-                "we need %u bytes\n", name.c_str(), pdin.name.c_str(), pdin.dev->length, act_len));
+        throw std::runtime_error(string_printf("demuxer %s length mismatch: pd %s has %zu bytes, "
+                "we need %zu bytes\n", name.c_str(), pdin.name.c_str(), pdin.dev->length, act_len));
 
     size_t skip_len = 0;
     bool gen_abort = false;
@@ -362,8 +363,8 @@ void pdrouting::pd_mux::start() {
         act_len += input.len;
 
     if (act_len > pdout.dev->length)
-        throw std::runtime_error(string_printf("muxer %s length mismatch: pd %s has %u bytes, "
-                "we need %u bytes\n", name.c_str(), pdout.name.c_str(), pdout.dev->length, act_len));
+        throw std::runtime_error(string_printf("muxer %s length mismatch: pd %s has %zu bytes, "
+                "we need %zu bytes\n", name.c_str(), pdout.name.c_str(), pdout.dev->length, act_len));
     
     size_t skip_len = 0;
     bool gen_abort = false;
