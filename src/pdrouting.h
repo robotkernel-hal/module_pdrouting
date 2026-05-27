@@ -193,6 +193,57 @@ class pdrouting :
                 //! trigger tick
                 void tick();                
         };
+        
+#if 0 
+        class pd_mux_merge :
+            public virtual robotkernel::shared_base,
+            public robotkernel::trigger_base
+        {
+            private:
+                std::shared_ptr<pdrouting> parent;
+                std::vector<struct pd> pdins;
+                struct pd pdout;
+
+                robotkernel::sp_trigger_t collector_trigger;
+                robotkernel::sp_trigger_collector_t collector;
+                
+            public:
+
+                //! construction
+                /*!
+                 * \param node yaml intialization node
+                 */
+                pd_mux_merge(std::shared_ptr<pdrouting> parent, const YAML::Node& node)
+                {
+                    pdout.name = robotkernel::helpers::get_as<std::string>(node, "pd_output_device");
+                    
+                    for (const auto& input_dev_name : node["pd_input_devices"]) {
+                        struct pd tmp;
+                        tmp.name = input_dev_name.as<std::string>();
+                        pdins.push_back(tmp);
+                    }
+                }
+
+                ~pd_mux_merge() {};
+
+                //! creating process data output and trigger
+                void start()        
+                {
+                    try {
+                        pdout.dev = robotkernel::get_device<robotkernel::process_data>(pdout.name);
+                    } catch (std::exception& e) {
+                        // pdout device does not exist, create one with our prefix!
+                        pdout.dev = std::make_shared<robotkernel::triple_buffer>(parent->name, pdout.name, "");
+                    }
+                }
+
+                //! destroying process data output and trigger
+                void stop();
+
+                //! trigger tick
+                void tick();                
+        };
+#endif
 
         typedef std::shared_ptr<pd_demux> sp_pd_demux_t;
         typedef std::list<sp_pd_demux_t> demux_list_t;

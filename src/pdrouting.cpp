@@ -33,7 +33,6 @@
 #include <stdio.h>
 #include <iostream>
 
-MODULE_DEF(pdrouting, module_pdrouting::pdrouting)
 
 using namespace robotkernel;
 using namespace robotkernel::helpers;
@@ -182,50 +181,53 @@ void pdrouting::pd_demux::start() {
         size_t cur_skip = 0;
         act_len = 0;
 
-
-        YAML::Node pddef_node = YAML::Load(pdin.dev->process_data_definition);
+        auto pd_def = robotkernel::get_pd_definition(pdin.dev->process_data_definition);
+        //parent->log(info, "processing\n%s\n", pd_def.c_str());
+        YAML::Node pddef_node = YAML::Load(pd_def);
         YAML::Emitter desc_emitter;
-        desc_emitter << YAML::BeginSeq;
+        desc_emitter << YAML::BeginMap;
 
         bool do_break = false; 
 
         for (const auto& entry : pddef_node) {
-            for (const auto& kv : entry) {
-                string key   = kv.first.as<string>();
-                string value = kv.second.as<string>();
+            string value = entry.first.as<string>();
+            size_t dt_size = get_dt_size(get_as<string>(entry.second, "type"));
+            size_t arr_size = get_as<bool>(entry.second, "array", false) ? 
+                get_as<int>(entry.second, "size", 1) : 1;
+            dt_size *= arr_size;
 
-                size_t dt_size = get_dt_size(key);
+            if (skip_len > cur_skip) {
+                cur_skip += dt_size;
+                parent->log(info, "skip this!\n");
+                continue;
+            }
 
-                if (skip_len > cur_skip) {
-                    cur_skip += dt_size;
-                    continue;
-                }
+            desc_emitter << YAML::Key << entry.first << YAML::Value << entry.second;
+            act_len += dt_size;
 
-                desc_emitter << YAML::BeginMap << YAML::Key << key << YAML::Value << value << YAML::EndMap;
-                act_len += dt_size;
-
-                if (act_len == output.len) {
-                    // split at boundary, everything ok
-                    skip_len += act_len;
-                    do_break = true;
-                } else if (act_len > output.len) {
-                    // did not split at desc boundary, abort generation
-                    parent->log(warning, "did not split \"%s\" at pd desc boundaries, abort!\n", pdin.dev->id().c_str());
-                    gen_abort = true;
-                    do_break = true;
-                }
+            if (act_len == output.len) {
+                // split at boundary, everything ok
+                skip_len += act_len;
+                do_break = true;
+            } else if (act_len > output.len) {
+                // did not split at desc boundary, abort generation
+                parent->log(warning, "did not split \"%s\" at pd desc boundaries, abort!\n", pdin.dev->id().c_str());
+                gen_abort = true;
+                do_break = true;
             }
 
             if (do_break) {
                 break;
             }
+            //parent->log(info, "have:\n%s\n", desc_emitter.c_str());
         }
 
         if (gen_abort) { break; }
 
-        desc_emitter << YAML::EndSeq;
+        desc_emitter << YAML::EndMap;
         
         output.gen_desc = desc_emitter.c_str();
+        //parent->log(info, "output gen_desc: %s\n", output.gen_desc.c_str());
     }
 
     for (auto& output : outputs) {
@@ -233,17 +235,20 @@ void pdrouting::pd_demux::start() {
             output.desc = output.gen_desc;
         }
 
-        string pd_desc = output.desc == "" ? string_printf("- uint8_t[%d]: data\n", output.len) : output.desc;
         string tmp = string_printf("%s.%s.%s", parent->name.c_str(), name.c_str(), output.name.c_str());
+        string pd_desc = output.desc == "" ? string_printf("data: { type: uint8_t, array: true, size: %d }", output.len) : output.desc;
+        string pd_desc_name = tmp + ".output.definition";
         if (zero_copy) {
-            output.pdout = make_shared<pointer_buffer>(output.len, nullptr, tmp, string("inputs"), pd_desc);
+            output.pdout = make_shared<pointer_buffer>(output.len, nullptr, tmp, string("inputs"), pd_desc_name);
         } else {
-            output.pdout = make_shared<triple_buffer>(output.len, tmp, string("inputs"), pd_desc);
+            output.pdout = make_shared<triple_buffer>(output.len, tmp, string("inputs"), pd_desc_name);
+            //parent->log(info, "created triple_buffer with len %d, definition\n%s\n", output.len, output.pdout->process_data_definition.c_str());
         }
         output.provider = make_shared<pd_provider>(string_printf("%s.%s", parent->name.c_str(), name.c_str()));
         output.pdout->set_provider(output.provider);
+        //parent->log(info, "add %s with\n%s\n", pd_desc_name.c_str(), pd_desc.c_str());
+        robotkernel::add_pd_definition(pd_desc_name, pd_desc);
         robotkernel::add_device(output.pdout);
-        
         output.pdout_inspection = make_shared<service_provider_process_data_inspection::pd_inspection>(tmp, "inputs", output.pdout); 
         robotkernel::add_device(output.pdout_inspection);
     }
@@ -341,7 +346,7 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
         }
 
         inputs.push_back(input(get_as<string>(input_node, "name"), 
-                    get_as<uint32_t>(input_node, "len"), desc));
+                    get_as<uint32_t>(input_node, "len", 0), desc));
     }
 
     if (trigger_name == "") {
@@ -374,42 +379,41 @@ void pdrouting::pd_mux::start() {
         size_t cur_skip = 0;
         act_len = 0;
 
-
-        YAML::Node pddef_node = YAML::Load(pdout.dev->process_data_definition);
+        auto pd_def = robotkernel::get_pd_definition(pdout.dev->process_data_definition);
+        YAML::Node pddef_node = YAML::Load(pd_def);
         YAML::Emitter desc_emitter;
-        desc_emitter << YAML::BeginSeq;
+        desc_emitter << YAML::BeginMap;
 
 //        parent->log(info, "Input_len %d\n", input.len);
 
         bool do_break = false;
 
         for (const auto& entry : pddef_node) {
-            for (const auto& kv : entry) {
-                string key   = kv.first.as<string>();
-                string value = kv.second.as<string>();
+            string value = entry.first.as<string>();
+            size_t dt_size = get_dt_size(get_as<string>(entry.second, "type"));
+            size_t arr_size = get_as<bool>(entry.second, "array", false) ? 
+                get_as<int>(entry.second, "size", 1) : 1;
+            dt_size *= arr_size;
 
-                size_t dt_size = get_dt_size(key);
+            if (skip_len > cur_skip) {
+                cur_skip += dt_size;
+                continue;
+            }
 
-                if (skip_len > cur_skip) {
-                    cur_skip += dt_size;
-                    continue;
-                }
+            desc_emitter << YAML::Key << entry.first << YAML::Value << entry.second;
+            act_len += dt_size;
 
-                desc_emitter << YAML::BeginMap << YAML::Key << key << YAML::Value << value << YAML::EndMap;
-                act_len += dt_size;
+            //                parent->log(info, "emitting desc %s len %d, act_len %d\n", value.c_str(), dt_size, act_len);
 
-//                parent->log(info, "emitting desc %s len %d, act_len %d\n", value.c_str(), dt_size, act_len);
-                
-                if (act_len == input.len) {
-                    // split at boundary, everything ok
-                    skip_len += act_len;
-                    do_break = true;
-                } else if (act_len > input.len) {
-                    // did not split at desc boundary, abort generation
-                    parent->log(warning, "did not split \"%s\" at pd desc boundaries, abort!\n", pdout.dev->id().c_str());
-                    gen_abort = true;
-                    do_break = true;
-                }
+            if (act_len == input.len) {
+                // split at boundary, everything ok
+                skip_len += act_len;
+                do_break = true;
+            } else if (act_len > input.len) {
+                // did not split at desc boundary, abort generation
+                parent->log(warning, "did not split \"%s\" at pd desc boundaries, abort!\n", pdout.dev->id().c_str());
+                gen_abort = true;
+                do_break = true;
             }
 
             if (do_break) {
@@ -419,7 +423,7 @@ void pdrouting::pd_mux::start() {
 
         if (gen_abort) { break; }
 
-        desc_emitter << YAML::EndSeq;
+        desc_emitter << YAML::EndMap;
         
         input.gen_desc = desc_emitter.c_str();
     }
@@ -432,16 +436,18 @@ void pdrouting::pd_mux::start() {
             input.desc = input.gen_desc;
         }
 
-        string pd_desc = input.desc == "" ? string_printf("- uint8_t[%d]: data\n", input.len) : input.desc;
         string tmp = string_printf("%s.%s.%s", parent->name.c_str(), name.c_str(), input.name.c_str());
+        string pd_desc = input.desc == "" ? string_printf("data: { type: uint8_t, array: true, size: %d }", input.len) : input.desc;
+        string pd_desc_name = tmp + "input.definition";
         if (zero_copy) {
-            input.pdin  = make_shared<pointer_buffer>(input.len, &buf[pos], tmp, string("outputs"), pd_desc);
+            input.pdin  = make_shared<pointer_buffer>(input.len, &buf[pos], tmp, string("outputs"), pd_desc_name);
             pos += input.len;
         } else {
-            input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc);
+            input.pdin  = make_shared<triple_buffer>(input.len, tmp, string("outputs"), pd_desc_name);
         }
         input.consumer = make_shared<pd_consumer>(string_printf("%s.%s", parent->name.c_str(), name.c_str()));
         input.pdin->set_consumer(input.consumer);
+        robotkernel::add_pd_definition(pd_desc_name, pd_desc);
         robotkernel::add_device(input.pdin);
 
         input.pdin_inspection = make_shared<service_provider_process_data_inspection::pd_inspection>(tmp, "outputs", input.pdin); 
@@ -666,3 +672,4 @@ int pdrouting::set_state(module_state_t state) {
 }
 
 
+MODULE_DEF(pdrouting, module_pdrouting::pdrouting)
