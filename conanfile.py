@@ -9,8 +9,8 @@ class MainProject(ConanFile):
     description = "pd routing is used to mux or demux process data to/from other pd's"
     exports_sources = ["*", "!.gitignore"]
 
-    tool_requires = ["robotkernel_service_helper/[~6]@robotkernel/stable"]
-    
+    tool_requires = ["robotkernel_generator/[~6]@robotkernel/stable"]
+
     def requirements(self):
         self.requires("robotkernel/[~6]@robotkernel/stable")
         self.requires("service_provider_process_data_inspection/[~6]@robotkernel/stable")
