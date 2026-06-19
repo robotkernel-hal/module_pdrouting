@@ -49,7 +49,7 @@ pdrouting::one_to_many::one_to_many(std::shared_ptr<pdrouting> parent, const YAM
 
     for (const auto& pd_node : pd_output_devices_node) {
         std::string pdout_name = pd_node.as<std::string>();
-        pdout.push_back({ pdout_name, "", 0, nullptr });
+        pdout.push_back({ pdout_name, 0, nullptr });
     }
 
 }
@@ -119,7 +119,9 @@ pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Nod
     */
 
     name = get_as<string>(node, "name");
-    pdin.trigger_name = get_as<string>(node, "trigger_name", "");
+
+    config = YAML::Clone(node);
+
     pdin.name = get_as<string>(node, "pd_input_device");
     zero_copy = get_as<bool>(node, "zero_copy", false);
 
@@ -253,25 +255,45 @@ void pdrouting::pd_demux::start() {
         robotkernel::add_device(output.pdout_inspection);
     }
 
-    if (pdin.trigger_name != "") {
-        parent->log(info, "%s try to get trigger: %s\n", name.c_str(), pdin.trigger_name.c_str());
-        auto trigger_dev = robotkernel::get_device<trigger>(pdin.trigger_name);
-        trigger_dev->add_trigger(shared_from_this_as<trigger_base>());
+    if (config["trigger"]) {
+        trg = make_shared<triggerable>(config["trigger"], std::bind(&pdrouting::pd_demux::tick, this));
+    } else if (config["trigger_name"]) {
+        YAML::Node tmp_node;
+        tmp_node["dev_name"] = config["trigger_name"];
+        trg = make_shared<triggerable>(tmp_node, std::bind(&pdrouting::pd_demux::tick, this));
+
+        parent->log(warning, "used 'trigger_name' from config file, please update to modern trigger syntax:\n"
+                "#########################################################\n"
+                "# Trigger device\n"
+                "trigger:\n"
+                "  # Trigger device name, must be registered to robotkernel\n"
+                "  # before switching to SAFEOP\n"
+                "  dev_name: timer.main.trigger\n"
+                "\n"
+                "  # Optional priority with which we are triggerd\n"
+                "  #prio: 50\n"
+                "\n"
+                "  # Optional cpu affinity on which cpu when run on.\n"
+                "  #affinity: [ 2, 3 ]\n"
+                "\n"
+                "  # Optional trigger mode, direct mode means in callers\n"
+                "  # thread context, no direct mode uses worker thread.\n"
+                "  #direct_mode: True\n");
     } else {
-        pdin.dev->trigger_dev->add_trigger(shared_from_this_as<trigger_base>());
+        YAML::Node tmp_node;
+        tmp_node["dev_name"] = pdin.dev->trigger_dev->id();
+        trg = make_shared<triggerable>(tmp_node, std::bind(&pdrouting::pd_demux::tick, this));
     }
+
+    trg->acquire();
 }
 
 //! destroying process data output and trigger
 void pdrouting::pd_demux::stop() {
     parent->log(info, "%s -> stopping demuxer.\n", name.c_str());
     
-    if (pdin.trigger_name != "") {
-        auto trigger_dev = robotkernel::get_device<trigger>(pdin.trigger_name);
-        trigger_dev->remove_trigger(shared_from_this_as<trigger_base>());
-    } else {
-        pdin.dev->trigger_dev->remove_trigger(shared_from_this_as<trigger_base>());
-    }
+    trg->release();
+    trg = nullptr;
 
     for (auto& output : outputs) {
         robotkernel::remove_device(output.pdout_inspection);
@@ -327,15 +349,14 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
         - { name: left, len: 8 }
         - { name: right, len: 8 }
     */
+    config = YAML::Clone(node);
 
     pdout.name = get_as<string>(node, "pd_output_device");
     name = get_as<string>(node, "name");
-    trigger_name = get_as<string>(node, "trigger_name", "");
     expected_rate = get_as<int>(node, "expected_rate", 1);
     zero_copy = get_as<bool>(node, "zero_copy", false);
 
-    parent->log(verbose, "%s got pd_output_device %s trigger_name %s\n", name.c_str(), 
-            pdout.name.c_str(), trigger_name.c_str());
+    parent->log(verbose, "%s got pd_output_device\n", name.c_str(), pdout.name.c_str());
 
     for (const auto& input_node : node["inputs"]) {
         std::string desc = "";
@@ -347,13 +368,6 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
 
         inputs.push_back(input(get_as<string>(input_node, "name"), 
                     get_as<uint32_t>(input_node, "len", 0), desc));
-    }
-
-    if (trigger_name == "") {
-        // using trigger_collector
-        collector_trigger = make_shared<trigger>(parent->name, name);
-        collector = make_shared<trigger_collector>(inputs.size(), 1.0/expected_rate, 
-                std::bind(&trigger::do_trigger, collector_trigger));
     }
 }
                         
@@ -428,6 +442,37 @@ void pdrouting::pd_mux::start() {
         input.gen_desc = desc_emitter.c_str();
     }
 
+    if (config["trigger"]) {
+        trg = make_shared<triggerable>(config["trigger"], std::bind(&pdrouting::pd_mux::tick, this));
+    } else if (config["trigger_name"]) {
+        YAML::Node tmp_node;
+        tmp_node["dev_name"] = config["trigger_name"];
+        trg = make_shared<triggerable>(tmp_node, std::bind(&pdrouting::pd_mux::tick, this));
+
+        parent->log(warning, "used 'trigger_name' from config file, please update to modern trigger syntax:\n"
+                "#########################################################\n"
+                "# Trigger device\n"
+                "trigger:\n"
+                "  # Trigger device name, must be registered to robotkernel\n"
+                "  # before switching to SAFEOP\n"
+                "  dev_name: timer.main.trigger\n"
+                "\n"
+                "  # Optional priority with which we are triggerd\n"
+                "  #prio: 50\n"
+                "\n"
+                "  # Optional cpu affinity on which cpu when run on.\n"
+                "  #affinity: [ 2, 3 ]\n"
+                "\n"
+                "  # Optional trigger mode, direct mode means in callers\n"
+                "  # thread context, no direct mode uses worker thread.\n"
+                "  #direct_mode: True\n");
+    } else {
+        // using trigger_collector
+        collector_trigger = make_shared<trigger>(parent->name, name);
+        collector = make_shared<trigger_collector>(inputs.size(), 1.0/expected_rate, 
+                std::bind(&trigger::do_trigger, collector_trigger));
+    }
+
     off_t pos = 0;
     auto buf = pdout.dev->next(pdout.provider);
     for (unsigned idx = 0; idx < inputs.size(); ++idx) {
@@ -453,15 +498,14 @@ void pdrouting::pd_mux::start() {
         input.pdin_inspection = make_shared<service_provider_process_data_inspection::pd_inspection>(tmp, "outputs", input.pdin); 
         robotkernel::add_device(input.pdin_inspection);
 
-        if (trigger_name == "") {
+        if (!trg) {
             input.collector_trigger_cb = make_shared<trigger_cb>(std::bind(&trigger_collector::trigger_collect, collector, idx));
             input.pdin->trigger_dev->add_trigger(input.collector_trigger_cb);
         }
     }
-    
-    if (trigger_name != "") {
-        auto trigger_dev = robotkernel::get_device<trigger>(trigger_name);
-        trigger_dev->add_trigger(shared_from_this_as<trigger_base>());
+
+    if (trg) {
+        trg->acquire();
     } else {
         collector_trigger->add_trigger(shared_from_this_as<trigger_base>());
     }
@@ -469,9 +513,9 @@ void pdrouting::pd_mux::start() {
 
 //! destroying process data input and trigger
 void pdrouting::pd_mux::stop() {
-    if (trigger_name != "") {
-        auto trigger_dev = robotkernel::get_device<trigger>(trigger_name);
-        trigger_dev->remove_trigger(shared_from_this_as<trigger_base>());
+    if (trg) {
+        trg->release();
+        trg = nullptr;
     } else {
         collector_trigger->remove_trigger(shared_from_this_as<trigger_base>());
     }

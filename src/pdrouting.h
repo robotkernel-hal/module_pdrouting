@@ -38,7 +38,6 @@ namespace module_pdrouting {
 
 struct pd {
     std::string                     name;
-    std::string                     trigger_name;
     robotkernel::sp_process_data_t  dev;
     robotkernel::sp_pd_provider_t   provider;
     robotkernel::sp_pd_consumer_t   consumer;
@@ -95,8 +94,7 @@ class pdrouting :
          */
 
         class pd_demux : 
-            public virtual robotkernel::shared_base,
-            public robotkernel::trigger_base
+            public virtual robotkernel::shared_base
         {
             public:
                 class output {
@@ -121,6 +119,9 @@ class pdrouting :
                 std::string name; 
                 struct pd pdin;
                 bool zero_copy = false;
+                std::shared_ptr<robotkernel::triggerable> trg;
+
+                YAML::Node config;
 
             public:
                 //! construction
@@ -169,9 +170,11 @@ class pdrouting :
                 struct pd pdout;
 
                 std::string name; 
-                std::string trigger_name;
                 double expected_rate;
                 bool zero_copy = false;
+                std::shared_ptr<robotkernel::triggerable> trg;
+
+                YAML::Node config;
                     
                 robotkernel::sp_trigger_t collector_trigger;
                 robotkernel::sp_trigger_collector_t collector;
