@@ -198,7 +198,7 @@ void pdrouting::pd_demux::start() {
 
             if (skip_len > cur_skip) {
                 cur_skip += dt_size;
-                parent->log(info, "skip this!\n");
+                parent->log(verbose, "skip this!\n");
                 continue;
             }
 
