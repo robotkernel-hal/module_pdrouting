@@ -12,10 +12,12 @@
 /aclocal.m4
 /ar-lib
 /autom4te.cache/
+/conan
 /config.guess
 /**/config.h.in
 /config.sub
 /configure
+/configure.ac
 /missing
 /depcomp
 /install-sh
