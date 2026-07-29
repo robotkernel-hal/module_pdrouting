@@ -59,7 +59,7 @@ pdrouting::one_to_many::~one_to_many() {
 
 //! creating process data output and trigger
 void pdrouting::one_to_many::start() {
-    parent->log(info, "%s try to get process data: %s\n", name.c_str(), pdin.name.c_str());
+    parent->log(info, "event=one_to_many_get_pd name=%s pd_device=%s\n", name.c_str(), pdin.name.c_str());
 
     pdin.dev  = robotkernel::get_device<process_data>(pdin.name);
     pdin.consumer = make_shared<pd_consumer>(string_printf("%s.%s", parent->name.c_str(), name.c_str()));
@@ -71,7 +71,8 @@ void pdrouting::one_to_many::start() {
         tmp_pdout.dev = robotkernel::get_device<process_data>(tmp_pdout.name);
 
         if (tmp_pdout.dev->length != in_length) {
-            throw std::runtime_error(string_printf("%s: pdout %s has wrong length! (need %zu bytes, got %zu bytes)", 
+            throw std::runtime_error(string_printf("event=one_to_many_get_pd name=%s pd_device=%s "
+                        "message=\"wrong length, need %zu bytes, got %zu bytes.\"", 
                     name.c_str(), tmp_pdout.name.c_str(), tmp_pdout.dev->length, in_length));
         }
 
@@ -125,7 +126,7 @@ pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Nod
     pdin.name = get_as<string>(node, "pd_input_device");
     zero_copy = get_as<bool>(node, "zero_copy", false);
 
-    parent->log(verbose, "%s got pd_input_device %s\n", name.c_str(), pdin.name.c_str());
+    parent->log(verbose, "event=demux_get_pd_input name=%s pd_device=%s\n", name.c_str(), pdin.name.c_str());
 
     for (const auto& output_node : node["outputs"]) {
         std::string desc = "";
@@ -162,7 +163,7 @@ size_t get_dt_size(const std::string& dt) {
 
 //! creating process data output and trigger
 void pdrouting::pd_demux::start() {
-    parent->log(info, "%s -> starting demuxer for %s\n", name.c_str(), pdin.name.c_str());
+    parent->log(info, "event=demux_start name=%s pd_device=%s\n", name.c_str(), pdin.name.c_str());
 
     pdin.dev  = robotkernel::get_device<process_data>(pdin.name);
     pdin.consumer = make_shared<pd_consumer>(string_printf("%s.%s", parent->name.c_str(), name.c_str()));
@@ -173,8 +174,8 @@ void pdrouting::pd_demux::start() {
         act_len += output.len;
 
     if (act_len > pdin.dev->length)
-        throw std::runtime_error(string_printf("demuxer %s length mismatch: pd %s has %zu bytes, "
-                "we need %zu bytes\n", name.c_str(), pdin.name.c_str(), pdin.dev->length, act_len));
+        throw std::runtime_error(string_printf("event=demux_start name=%s pd_device=%s message=\"length mismatch: got %zu bytes, "
+                "we need %zu bytes.\"\n", name.c_str(), pdin.name.c_str(), pdin.dev->length, act_len));
 
     size_t skip_len = 0;
     bool gen_abort = false;
@@ -184,7 +185,8 @@ void pdrouting::pd_demux::start() {
         act_len = 0;
 
         auto pd_def = robotkernel::get_pd_definition(pdin.dev->process_data_definition);
-        //parent->log(info, "processing\n%s\n", pd_def.c_str());
+        parent->log(verbose, "event=demux_start name=%s pd_device=%s pd_definition=\"%s\"\n", 
+                name.c_str(), pdin.name.c_str(), pd_def.c_str());
         YAML::Node pddef_node = YAML::Load(pd_def);
         YAML::Emitter desc_emitter;
         desc_emitter << YAML::BeginMap;
@@ -200,7 +202,8 @@ void pdrouting::pd_demux::start() {
 
             if (skip_len > cur_skip) {
                 cur_skip += dt_size;
-                parent->log(verbose, "skip this!\n");
+                parent->log(verbose, "event=demux_start name=%s pd_device=%s skip=%s\n",
+                        name.c_str(), pdin.name.c_str(), value.c_str());
                 continue;
             }
 
@@ -213,7 +216,8 @@ void pdrouting::pd_demux::start() {
                 do_break = true;
             } else if (act_len > output.len) {
                 // did not split at desc boundary, abort generation
-                parent->log(warning, "did not split \"%s\" at pd desc boundaries, abort!\n", pdin.dev->id().c_str());
+                parent->log(warning, "event=demux_start name=%s pd_device=%s message=\"did not split at "
+                        "pd desc boundaries, abort!\"\n", name.c_str(), pdin.dev->id().c_str());
                 gen_abort = true;
                 do_break = true;
             }
@@ -221,7 +225,6 @@ void pdrouting::pd_demux::start() {
             if (do_break) {
                 break;
             }
-            //parent->log(info, "have:\n%s\n", desc_emitter.c_str());
         }
 
         if (gen_abort) { break; }
@@ -229,7 +232,8 @@ void pdrouting::pd_demux::start() {
         desc_emitter << YAML::EndMap;
         
         output.gen_desc = desc_emitter.c_str();
-        //parent->log(info, "output gen_desc: %s\n", output.gen_desc.c_str());
+        parent->log(verbose, "event=demux_start name=%s pd_device=%s output_definition=\"%s\"\n", 
+                name.c_str(), pdin.name.c_str(), output.gen_desc.c_str());
     }
 
     for (auto& output : outputs) {
@@ -290,7 +294,7 @@ void pdrouting::pd_demux::start() {
 
 //! destroying process data output and trigger
 void pdrouting::pd_demux::stop() {
-    parent->log(info, "%s -> stopping demuxer.\n", name.c_str());
+    parent->log(info, "event=demux_stop name=%s\n", name.c_str());
     
     trg->release();
     trg = nullptr;
@@ -304,7 +308,7 @@ void pdrouting::pd_demux::stop() {
         try {
             output.pdout->reset_provider(output.provider);
         } catch (exception& e) {
-            parent->log(warning, "reseting provider failed, ignoring: %s\n", e.what()); 
+            parent->log(warning, "event=demux_stop name=%s message=\"reseting provider failed, ignoring: %s\"\n", name.c_str(), e.what()); 
         }
 
         output.pdout = nullptr;
@@ -314,7 +318,7 @@ void pdrouting::pd_demux::stop() {
     try {
         pdin.dev->reset_consumer(pdin.consumer);
     } catch (exception& e) {
-        parent->log(warning, "reseting consumer failed, ignoring: %s\n", e.what()); 
+        parent->log(warning, "event=demux_stop name=%s message=\"reseting consumer failed, ignoring: %s\"\n", name.c_str(), e.what()); 
     }
 
     pdin.consumer = nullptr;
@@ -356,7 +360,7 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
     expected_rate = get_as<int>(node, "expected_rate", 1);
     zero_copy = get_as<bool>(node, "zero_copy", false);
 
-    parent->log(verbose, "%s got pd_output_device\n", name.c_str(), pdout.name.c_str());
+    parent->log(verbose, "event=mux_get_pd_output name=%s pd_device=%s\n", name.c_str(), pdout.name.c_str());
 
     for (const auto& input_node : node["inputs"]) {
         std::string desc = "";
@@ -382,8 +386,8 @@ void pdrouting::pd_mux::start() {
         act_len += input.len;
 
     if (act_len > pdout.dev->length)
-        throw std::runtime_error(string_printf("muxer %s length mismatch: pd %s has %zu bytes, "
-                "we need %zu bytes\n", name.c_str(), pdout.name.c_str(), pdout.dev->length, act_len));
+        throw std::runtime_error(string_printf("event=mux_start name=%s pd_device=%s message=\"length mismatch: got %zu bytes, "
+                "we need %zu bytes.\"\n", name.c_str(), pdout.name.c_str(), pdout.dev->length, act_len));
     
     size_t skip_len = 0;
     bool gen_abort = false;
@@ -398,7 +402,7 @@ void pdrouting::pd_mux::start() {
         YAML::Emitter desc_emitter;
         desc_emitter << YAML::BeginMap;
 
-//        parent->log(info, "Input_len %d\n", input.len);
+        parent->log(verbose, "event=mux_start name=%s pd_device %s input_len=%d\n", name.c_str(), pdout.name.c_str(), input.len);
 
         bool do_break = false;
 
@@ -417,15 +421,15 @@ void pdrouting::pd_mux::start() {
             desc_emitter << YAML::Key << entry.first << YAML::Value << entry.second;
             act_len += dt_size;
 
-            //                parent->log(info, "emitting desc %s len %d, act_len %d\n", value.c_str(), dt_size, act_len);
-
             if (act_len == input.len) {
                 // split at boundary, everything ok
                 skip_len += act_len;
                 do_break = true;
             } else if (act_len > input.len) {
                 // did not split at desc boundary, abort generation
-                parent->log(warning, "did not split \"%s\" at pd desc boundaries, abort!\n", pdout.dev->id().c_str());
+                parent->log(warning, "event=mux_start name=%s pd_device=%s message=\"did not split at pd desc boundaries, abort!\"\n", 
+                        name.c_str(), pdout.dev->id().c_str());
+
                 gen_abort = true;
                 do_break = true;
             }
@@ -529,7 +533,8 @@ void pdrouting::pd_mux::stop() {
         try {
             input.pdin->reset_consumer(input.consumer);
         } catch (exception& e) {
-            parent->log(warning, "reseting consumer failed, ignoring: %s\n", e.what()); 
+            parent->log(warning, "event=mux_stop name=%s pd_device=%s message=\"reseting consumer failed, ignoring: %s\"\n", 
+                    name.c_str(), input.name.c_str(), e.what()); 
         }
 
         input.pdin  = nullptr;
@@ -539,7 +544,8 @@ void pdrouting::pd_mux::stop() {
     try {
         pdout.dev->reset_provider(pdout.provider);
     } catch (exception& e) {
-        parent->log(warning, "reseting provider failed, ignoring: %s\n", e.what()); 
+        parent->log(warning, "event=mux_stop name=%s pd_device=%s message=\"reseting provider failed, ignoring: %s\"\n",
+                    name.c_str(), pdout.name.c_str(), e.what()); 
     }
 
     pdout.provider = nullptr;
