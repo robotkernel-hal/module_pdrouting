@@ -120,6 +120,7 @@ class pdrouting :
                 struct pd pdin;
                 bool zero_copy = false;
                 std::shared_ptr<robotkernel::triggerable> trg;
+                std::vector<uint8_t> zero_copy_buf;
 
                 YAML::Node config;
 

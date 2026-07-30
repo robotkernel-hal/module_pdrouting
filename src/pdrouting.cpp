@@ -334,7 +334,19 @@ void pdrouting::pd_demux::tick() {
 
     for (auto& output : outputs) {
         if (zero_copy) {
-            dynamic_pointer_cast<pointer_buffer>(output.pdout)->set_ptr(output.provider, &buf[pos]);
+            // pop() may return a short-lived buffer (e.g., from triple_buffer internal
+            // ring). We cannot store raw pointers into it because they become dangling
+            // after tick() returns. Copy into a persistent member buffer instead.
+            // The memcpy cost is negligible for typical PD sizes (<1kB) on modern
+            // hardware (~20-50ns in L1), and is dwarfed by the pop() call itself.
+            if (zero_copy_buf.empty()) {
+                size_t total = 0;
+                for (const auto& o : outputs)
+                    total += o.len;
+                zero_copy_buf.resize(total);
+            }
+            memcpy(zero_copy_buf.data() + pos, &buf[pos], output.len);
+            dynamic_pointer_cast<pointer_buffer>(output.pdout)->set_ptr(output.provider, zero_copy_buf.data() + pos);
         } else {
             output.pdout->write(output.provider, 0, &buf[pos], output.len);
         }
