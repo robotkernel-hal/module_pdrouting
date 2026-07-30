@@ -721,9 +721,17 @@ void pdrouting::init() {
     }
 
     if (config["one_to_many"]) {
-        for (const auto& o2m_node : config["one_to_many"]) {
-            auto d = std::make_shared<one_to_many>(shared_from_this_as<pdrouting>(), o2m_node);
-            o2m.push_back(d);
+        if (config["one_to_many"].Type() == YAML::NodeType::Sequence) {
+            for (const auto& o2m_node : config["one_to_many"]) {
+                auto d = std::make_shared<one_to_many>(shared_from_this_as<pdrouting>(), o2m_node);
+                o2m.push_back(d);
+            }
+        } else if (config["one_to_many"].Type() == YAML::NodeType::Map) {
+            std::list<YAML::Node> instances;
+            parse_templates(config["one_to_many"], instances);
+            for (const auto& o2m_node : instances) {
+                o2m.push_back(std::make_shared<one_to_many>(shared_from_this_as<pdrouting>(), o2m_node));
+            }
         }
     }
 }
