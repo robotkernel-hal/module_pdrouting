@@ -715,7 +715,6 @@ void pdrouting::init() {
             std::list<YAML::Node> instances;
             parse_templates(config["mux"], instances);
             for (const auto& mux_node : instances) {
-                printf("processing ...\n");
                 mux.push_back(std::make_shared<pd_mux>(shared_from_this_as<pdrouting>(), mux_node));
             }
         }
