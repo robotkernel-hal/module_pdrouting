@@ -89,11 +89,16 @@ void pdrouting::one_to_many::start() {
                 
 //! trigger tick
 void pdrouting::one_to_many::tick() {
-    auto buf = pdin.dev->pop(pdin.consumer);
+    try {
+        auto buf = pdin.dev->pop(pdin.consumer);
 
-    for (auto& tmp_pdout : pdout) {
-        tmp_pdout.dev->write(tmp_pdout.provider, 0, buf, pdin.dev->length);
-        tmp_pdout.dev->trigger();
+        for (auto& tmp_pdout : pdout) {
+            tmp_pdout.dev->write(tmp_pdout.provider, 0, buf, pdin.dev->length);
+            tmp_pdout.dev->trigger();
+        }
+    } catch (const std::exception& e) {
+        parent->log(error, "event=one_to_many_tick name=%s message=\"tick failed: %s\"\n",
+                name.c_str(), e.what());
     }
 }
 
@@ -352,29 +357,34 @@ void pdrouting::pd_demux::stop() {
                 
 //! trigger tick
 void pdrouting::pd_demux::tick() {
-    off_t pos = 0;
-    auto buf = pdin.dev->pop(pdin.consumer);
+    try {
+        off_t pos = 0;
+        auto buf = pdin.dev->pop(pdin.consumer);
 
-    for (auto& output : outputs) {
-        if (zero_copy) {
-            // pop() may return a short-lived buffer (e.g., from triple_buffer internal
-            // ring). We cannot store raw pointers into it because they become dangling
-            // after tick() returns. Copy into a persistent member buffer instead.
-            // The memcpy cost is negligible for typical PD sizes (<1kB) on modern
-            // hardware (~20-50ns in L1), and is dwarfed by the pop() call itself.
-            if (zero_copy_buf.empty()) {
-                size_t total = 0;
-                for (const auto& o : outputs)
-                    total += o.len;
-                zero_copy_buf.resize(total);
+        for (auto& output : outputs) {
+            if (zero_copy) {
+                // pop() may return a short-lived buffer (e.g., from triple_buffer internal
+                // ring). We cannot store raw pointers into it because they become dangling
+                // after tick() returns. Copy into a persistent member buffer instead.
+                // The memcpy cost is negligible for typical PD sizes (<1kB) on modern
+                // hardware (~20-50ns in L1), and is dwarfed by the pop() call itself.
+                if (zero_copy_buf.empty()) {
+                    size_t total = 0;
+                    for (const auto& o : outputs)
+                        total += o.len;
+                    zero_copy_buf.resize(total);
+                }
+                memcpy(zero_copy_buf.data() + pos, &buf[pos], output.len);
+                dynamic_pointer_cast<pointer_buffer>(output.pdout)->set_ptr(output.provider, zero_copy_buf.data() + pos);
+            } else {
+                output.pdout->write(output.provider, 0, &buf[pos], output.len);
             }
-            memcpy(zero_copy_buf.data() + pos, &buf[pos], output.len);
-            dynamic_pointer_cast<pointer_buffer>(output.pdout)->set_ptr(output.provider, zero_copy_buf.data() + pos);
-        } else {
-            output.pdout->write(output.provider, 0, &buf[pos], output.len);
-        }
 
-        pos += output.len;
+            pos += output.len;
+        }
+    } catch (const std::exception& e) {
+        parent->log(error, "event=demux_tick name=%s message=\"tick failed: %s\"\n",
+                name.c_str(), e.what());
     }
 }
 
@@ -604,25 +614,30 @@ void pdrouting::pd_mux::stop() {
                 
 //! trigger tick
 void pdrouting::pd_mux::tick() {
-    off_t pos = 0;
+    try {
+        off_t pos = 0;
 
-    if (zero_copy) {
-        pdout.dev->push(pdout.provider);
-        auto buf = pdout.dev->next(pdout.provider);
-    
-        for (auto& input : inputs) {
-            dynamic_pointer_cast<pointer_buffer>(input.pdin)->set_ptr(input.consumer, &buf[pos]);
-            pos += input.len;
-        }
-    } else {
-        for (auto& input : inputs) {
-            auto buf = input.pdin->pop(input.consumer);
-            pdout.dev->write(pdout.provider, pos, buf, input.len, false);
+        if (zero_copy) {
+            pdout.dev->push(pdout.provider);
+            auto buf = pdout.dev->next(pdout.provider);
 
-            pos += input.len;
+            for (auto& input : inputs) {
+                dynamic_pointer_cast<pointer_buffer>(input.pdin)->set_ptr(input.consumer, &buf[pos]);
+                pos += input.len;
+            }
+        } else {
+            for (auto& input : inputs) {
+                auto buf = input.pdin->pop(input.consumer);
+                pdout.dev->write(pdout.provider, pos, buf, input.len, false);
+
+                pos += input.len;
+            }
+
+            pdout.dev->push(pdout.provider);
         }
-    
-        pdout.dev->push(pdout.provider);
+    } catch (const std::exception& e) {
+        parent->log(error, "event=mux_tick name=%s message=\"tick failed: %s\"\n",
+                name.c_str(), e.what());
     }
 }
 
