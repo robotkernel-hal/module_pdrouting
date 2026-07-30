@@ -642,7 +642,7 @@ void pdrouting::pd_mux::stop() {
 //! trigger tick
 void pdrouting::pd_mux::tick() {
     try {
-        off_t pos = 0;
+        size_t pos = 0;
 
         if (zero_copy) {
             pdout.dev->push(pdout.provider);
