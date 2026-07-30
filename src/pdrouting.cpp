@@ -62,6 +62,8 @@ pdrouting::one_to_many::~one_to_many() {
 
 //! creating process data output and trigger
 void pdrouting::one_to_many::start() {
+    started = true;
+
     parent->log(info, "event=one_to_many_get_pd name=%s pd_device=%s\n", name.c_str(), pdin.name.c_str());
 
     pdin.dev  = robotkernel::get_device<process_data>(pdin.name);
@@ -84,7 +86,6 @@ void pdrouting::one_to_many::start() {
     }
 
     pdin.dev->trigger_dev->add_trigger(shared_from_this_as<trigger_base>());
-    started = true;
 }
                 
 //! trigger tick
@@ -186,6 +187,8 @@ size_t get_dt_size(const std::string& dt) {
 
 //! creating process data output and trigger
 void pdrouting::pd_demux::start() {
+    started = true;
+
     parent->log(info, "event=demux_start name=%s pd_device=%s\n", name.c_str(), pdin.name.c_str());
 
     pdin.dev  = robotkernel::get_device<process_data>(pdin.name);
@@ -313,7 +316,6 @@ void pdrouting::pd_demux::start() {
     }
 
     trg->acquire();
-    started = true;
 }
 
 //! destroying process data output and trigger
@@ -324,33 +326,43 @@ void pdrouting::pd_demux::stop() {
 
     parent->log(info, "event=demux_stop name=%s\n", name.c_str());
 
-    trg->release();
-    trg = nullptr;
+    if (trg) {
+        trg->release();
+        trg = nullptr;
+    }
 
     for (auto& output : outputs) {
-        robotkernel::remove_device(output.pdout_inspection);
-        output.pdout_inspection = nullptr;
-    
-        robotkernel::remove_device(output.pdout);
-
-        try {
-            output.pdout->reset_provider(output.provider);
-        } catch (exception& e) {
-            parent->log(warning, "event=demux_stop name=%s message=\"reseting provider failed, ignoring: %s\"\n", name.c_str(), e.what()); 
+        if (output.pdout_inspection) {
+            robotkernel::remove_device(output.pdout_inspection);
+            output.pdout_inspection = nullptr;
         }
 
-        output.pdout = nullptr;
-        output.provider = nullptr;
-    }
-    
-    try {
-        pdin.dev->reset_consumer(pdin.consumer);
-    } catch (exception& e) {
-        parent->log(warning, "event=demux_stop name=%s message=\"reseting consumer failed, ignoring: %s\"\n", name.c_str(), e.what()); 
+        if (output.pdout) {
+            robotkernel::remove_device(output.pdout);
+
+            try {
+                output.pdout->reset_provider(output.provider);
+            } catch (exception& e) {
+                parent->log(warning, "event=demux_stop name=%s message=\"reseting provider failed, ignoring: %s\"\n",
+                        name.c_str(), e.what());
+            }
+
+            output.pdout = nullptr;
+            output.provider = nullptr;
+        }
     }
 
-    pdin.consumer = nullptr;
-    pdin.dev  = nullptr;
+    if (pdin.dev) {
+        try {
+            pdin.dev->reset_consumer(pdin.consumer);
+        } catch (exception& e) {
+            parent->log(warning, "event=demux_stop name=%s message=\"reseting consumer failed, ignoring: %s\"\n",
+                    name.c_str(), e.what());
+        }
+
+        pdin.consumer = nullptr;
+        pdin.dev = nullptr;
+    }
 
     started = false;
 }
@@ -430,6 +442,8 @@ pdrouting::pd_mux::~pd_mux() {
 
 //! creating process data input and trigger
 void pdrouting::pd_mux::start() {
+    started = true;
+
     pdout.dev  = robotkernel::get_device<process_data>(pdout.name);
     pdout.provider = make_shared<pd_provider>(string_printf("%s.%s", parent->name.c_str(), name.c_str()));
     pdout.dev->set_provider(pdout.provider);
@@ -566,7 +580,6 @@ void pdrouting::pd_mux::start() {
     } else {
         collector_trigger->add_trigger(shared_from_this_as<trigger_base>());
     }
-    started = true;
 }
 
 //! destroying process data input and trigger
@@ -578,36 +591,42 @@ void pdrouting::pd_mux::stop() {
     if (trg) {
         trg->release();
         trg = nullptr;
-    } else {
+    } else if (collector_trigger) {
         collector_trigger->remove_trigger(shared_from_this_as<trigger_base>());
     }
 
     for (auto& input : inputs) {
-        robotkernel::remove_device(input.pdin_inspection);
-        input.pdin_inspection = nullptr;
-
-        robotkernel::remove_device(input.pdin);
-
-        try {
-            input.pdin->reset_consumer(input.consumer);
-        } catch (exception& e) {
-            parent->log(warning, "event=mux_stop name=%s pd_device=%s message=\"reseting consumer failed, ignoring: %s\"\n",
-                    name.c_str(), input.name.c_str(), e.what());
+        if (input.pdin_inspection) {
+            robotkernel::remove_device(input.pdin_inspection);
+            input.pdin_inspection = nullptr;
         }
 
-        input.pdin  = nullptr;
-        input.consumer  = nullptr;
+        if (input.pdin) {
+            robotkernel::remove_device(input.pdin);
+
+            try {
+                input.pdin->reset_consumer(input.consumer);
+            } catch (exception& e) {
+                parent->log(warning, "event=mux_stop name=%s pd_device=%s message=\"reseting consumer failed, ignoring: %s\"\n",
+                        name.c_str(), input.name.c_str(), e.what());
+            }
+
+            input.pdin = nullptr;
+            input.consumer = nullptr;
+        }
     }
 
-    try {
-        pdout.dev->reset_provider(pdout.provider);
-    } catch (exception& e) {
-        parent->log(warning, "event=mux_stop name=%s pd_device=%s message=\"reseting provider failed, ignoring: %s\"\n",
-                    name.c_str(), pdout.name.c_str(), e.what());
-    }
+    if (pdout.dev) {
+        try {
+            pdout.dev->reset_provider(pdout.provider);
+        } catch (exception& e) {
+            parent->log(warning, "event=mux_stop name=%s pd_device=%s message=\"reseting provider failed, ignoring: %s\"\n",
+                        name.c_str(), pdout.name.c_str(), e.what());
+        }
 
-    pdout.provider = nullptr;
-    pdout.dev  = nullptr;
+        pdout.provider = nullptr;
+        pdout.dev = nullptr;
+    }
 
     started = false;
 }
