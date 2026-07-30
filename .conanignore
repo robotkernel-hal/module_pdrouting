@@ -1,0 +1,37 @@
+# Build artifacts
+build/
+autom4te.cache/
+*.o
+*.la
+*.lo
+*.a
+*.so
+*.so.*
+
+# Generated files
+config.h
+config.status
+Makefile.in
+configure
+aclocal.m4
+ltmain.sh
+depcomp
+install-sh
+missing
+compile
+ar-lib
+config.guess
+config.sub
+
+# Backups
+*~
+
+# CI/CD and deployment
+.github/
+debian/
+rmc-build.yaml
+RMC-Jenkinsfile
+seqm.yaml
+
+# Documentation
+doc/
