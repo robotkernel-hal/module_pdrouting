@@ -1,0 +1,43 @@
+#                                               -*- Autoconf -*-
+# Process this file with autoconf to produce a configure script.
+
+AC_PREREQ([2.63])
+AC_INIT([module_pdrouting],[None], [Robert Burger <robert.burger@dlr.de>])
+AC_CONFIG_HEADERS([config.h])
+AC_CONFIG_MACRO_DIR([m4])
+AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
+
+# Checks for programs.
+m4_ifdef([AM_PROG_AR], [AM_PROG_AR])
+AC_PROG_CXX
+AX_CXX_COMPILE_STDCXX([14], [ext], [mandatory])
+AC_PROG_AWK
+AC_PROG_INSTALL
+AC_PROG_LIBTOOL
+AC_PROG_LN_S
+AC_PROG_MAKE_SET
+AC_PROG_INSTALL
+m4_ifdef([PKG_PROG_PKG_CONFIG], [PKG_PROG_PKG_CONFIG])
+pkgconfigdir='${libdir}/pkgconfig'
+AC_SUBST([pkgconfigdir])
+
+# Check dependencies
+PKG_CHECK_MODULES([ROBOTKERNEL], [robotkernel])
+PKG_CHECK_MODULES([SERVICE_PROVIDER_PROCESS_DATA_INSPECTION], [service_provider_process_data_inspection])
+
+# Checks for header files.
+AC_CHECK_HEADERS([stdlib.h string.h])
+
+# Checks for typedefs, structures, and compiler characteristics.
+AC_TYPE_SIZE_T
+
+# Checks for library functions.
+AC_CHECK_FUNCS([strdup])
+
+# Checks for library functions.
+AC_CHECK_LIB(dl, dlopen)
+
+AC_CONFIG_FILES([Makefile src/Makefile module_pdrouting.pc])
+
+AC_OUTPUT
+
