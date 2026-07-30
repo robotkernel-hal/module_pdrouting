@@ -66,6 +66,7 @@ class pdrouting :
                 std::shared_ptr<pdrouting> parent;
                 struct pd pdin;
                 std::list<struct pd> pdout;
+                bool started = false;
 
             public:
                 one_to_many(std::shared_ptr<pdrouting> parent, const YAML::Node& node);
@@ -121,6 +122,7 @@ class pdrouting :
                 bool zero_copy = false;
                 std::shared_ptr<robotkernel::triggerable> trg;
                 std::vector<uint8_t> zero_copy_buf;
+                bool started = false;
 
                 YAML::Node config;
 
@@ -130,7 +132,7 @@ class pdrouting :
                  * \param node yaml intialization node
                  */
                 pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Node& node);
-                ~pd_demux() {};
+                ~pd_demux();
 
                 //! creating process data output and trigger
                 void start();
@@ -174,6 +176,7 @@ class pdrouting :
                 double expected_rate;
                 bool zero_copy = false;
                 std::shared_ptr<robotkernel::triggerable> trg;
+                bool started = false;
 
                 YAML::Node config;
                     
@@ -186,7 +189,7 @@ class pdrouting :
                  * \param node yaml intialization node
                  */
                 pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& node);
-                ~pd_mux() {};
+                ~pd_mux();
 
                 //! creating process data output and trigger
                 void start();

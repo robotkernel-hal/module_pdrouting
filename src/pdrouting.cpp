@@ -55,6 +55,9 @@ pdrouting::one_to_many::one_to_many(std::shared_ptr<pdrouting> parent, const YAM
 }
 
 pdrouting::one_to_many::~one_to_many() {
+    if (started) {
+        stop();
+    }
 }
 
 //! creating process data output and trigger
@@ -81,6 +84,7 @@ void pdrouting::one_to_many::start() {
     }
 
     pdin.dev->trigger_dev->add_trigger(shared_from_this_as<trigger_base>());
+    started = true;
 }
                 
 //! trigger tick
@@ -95,6 +99,10 @@ void pdrouting::one_to_many::tick() {
 
 //! destroying process data output and trigger
 void pdrouting::one_to_many::stop() {
+    if (!started) {
+        return;
+    }
+
     pdin.dev->trigger_dev->remove_trigger(shared_from_this_as<trigger_base>());
 
     for (auto& tmp_pdout : pdout) {
@@ -102,10 +110,12 @@ void pdrouting::one_to_many::stop() {
         tmp_pdout.provider = nullptr;
         tmp_pdout.dev = nullptr;
     }
-    
+
     pdin.dev->reset_consumer(pdin.consumer);
     pdin.consumer = nullptr;
     pdin.dev = nullptr;
+
+    started = false;
 }
 
 
@@ -142,7 +152,13 @@ pdrouting::pd_demux::pd_demux(std::shared_ptr<pdrouting> parent, const YAML::Nod
                     get_as<uint32_t>(output_node, "len"), desc));
     }
 }
-                        
+
+pdrouting::pd_demux::~pd_demux() {
+    if (started) {
+        stop();
+    }
+}
+
 size_t get_dt_size(const std::string& dt) {
     if ((dt == "uint8_t") || (dt == "int8_t") || (dt == "char")) {
         return (size_t)1u;
@@ -292,12 +308,17 @@ void pdrouting::pd_demux::start() {
     }
 
     trg->acquire();
+    started = true;
 }
 
 //! destroying process data output and trigger
 void pdrouting::pd_demux::stop() {
+    if (!started) {
+        return;
+    }
+
     parent->log(info, "event=demux_stop name=%s\n", name.c_str());
-    
+
     trg->release();
     trg = nullptr;
 
@@ -325,6 +346,8 @@ void pdrouting::pd_demux::stop() {
 
     pdin.consumer = nullptr;
     pdin.dev  = nullptr;
+
+    started = false;
 }
                 
 //! trigger tick
@@ -388,7 +411,13 @@ pdrouting::pd_mux::pd_mux(std::shared_ptr<pdrouting> parent, const YAML::Node& n
                     get_as<uint32_t>(input_node, "len", 0), desc));
     }
 }
-                        
+
+pdrouting::pd_mux::~pd_mux() {
+    if (started) {
+        stop();
+    }
+}
+
 //! creating process data input and trigger
 void pdrouting::pd_mux::start() {
     pdout.dev  = robotkernel::get_device<process_data>(pdout.name);
@@ -527,10 +556,15 @@ void pdrouting::pd_mux::start() {
     } else {
         collector_trigger->add_trigger(shared_from_this_as<trigger_base>());
     }
+    started = true;
 }
 
 //! destroying process data input and trigger
 void pdrouting::pd_mux::stop() {
+    if (!started) {
+        return;
+    }
+
     if (trg) {
         trg->release();
         trg = nullptr;
@@ -541,29 +575,31 @@ void pdrouting::pd_mux::stop() {
     for (auto& input : inputs) {
         robotkernel::remove_device(input.pdin_inspection);
         input.pdin_inspection = nullptr;
-    
+
         robotkernel::remove_device(input.pdin);
 
         try {
             input.pdin->reset_consumer(input.consumer);
         } catch (exception& e) {
-            parent->log(warning, "event=mux_stop name=%s pd_device=%s message=\"reseting consumer failed, ignoring: %s\"\n", 
-                    name.c_str(), input.name.c_str(), e.what()); 
+            parent->log(warning, "event=mux_stop name=%s pd_device=%s message=\"reseting consumer failed, ignoring: %s\"\n",
+                    name.c_str(), input.name.c_str(), e.what());
         }
 
         input.pdin  = nullptr;
         input.consumer  = nullptr;
     }
-    
+
     try {
         pdout.dev->reset_provider(pdout.provider);
     } catch (exception& e) {
         parent->log(warning, "event=mux_stop name=%s pd_device=%s message=\"reseting provider failed, ignoring: %s\"\n",
-                    name.c_str(), pdout.name.c_str(), e.what()); 
+                    name.c_str(), pdout.name.c_str(), e.what());
     }
 
     pdout.provider = nullptr;
     pdout.dev  = nullptr;
+
+    started = false;
 }
                 
 //! trigger tick
