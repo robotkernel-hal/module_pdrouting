@@ -95,6 +95,8 @@ void pdrouting::one_to_many::tick() {
 
 //! destroying process data output and trigger
 void pdrouting::one_to_many::stop() {
+    pdin.dev->trigger_dev->remove_trigger(shared_from_this_as<trigger_base>());
+
     for (auto& tmp_pdout : pdout) {
         tmp_pdout.dev->reset_provider(tmp_pdout.provider);
         tmp_pdout.provider = nullptr;
