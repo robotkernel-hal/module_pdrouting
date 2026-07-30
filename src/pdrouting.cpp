@@ -347,7 +347,7 @@ void pdrouting::pd_demux::stop() {
             try {
                 output.pdout->reset_provider(output.provider);
             } catch (exception& e) {
-                parent->log(warning, "event=demux_stop name=%s message=\"reseting provider failed, ignoring: %s\"\n",
+                parent->log(warning, "event=demux_stop name=%s message=\"resetting provider failed, ignoring: %s\"\n",
                         name.c_str(), e.what());
             }
 
@@ -360,7 +360,7 @@ void pdrouting::pd_demux::stop() {
         try {
             pdin.dev->reset_consumer(pdin.consumer);
         } catch (exception& e) {
-            parent->log(warning, "event=demux_stop name=%s message=\"reseting consumer failed, ignoring: %s\"\n",
+            parent->log(warning, "event=demux_stop name=%s message=\"resetting consumer failed, ignoring: %s\"\n",
                     name.c_str(), e.what());
         }
 
@@ -615,7 +615,7 @@ void pdrouting::pd_mux::stop() {
             try {
                 input.pdin->reset_consumer(input.consumer);
             } catch (exception& e) {
-                parent->log(warning, "event=mux_stop name=%s pd_device=%s message=\"reseting consumer failed, ignoring: %s\"\n",
+                parent->log(warning, "event=mux_stop name=%s pd_device=%s message=\"resetting consumer failed, ignoring: %s\"\n",
                         name.c_str(), input.name.c_str(), e.what());
             }
 
@@ -628,7 +628,7 @@ void pdrouting::pd_mux::stop() {
         try {
             pdout.dev->reset_provider(pdout.provider);
         } catch (exception& e) {
-            parent->log(warning, "event=mux_stop name=%s pd_device=%s message=\"reseting provider failed, ignoring: %s\"\n",
+            parent->log(warning, "event=mux_stop name=%s pd_device=%s message=\"resetting provider failed, ignoring: %s\"\n",
                         name.c_str(), pdout.name.c_str(), e.what());
         }
 
