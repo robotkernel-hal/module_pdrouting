@@ -203,6 +203,10 @@ void pdrouting::pd_demux::start() {
         throw std::runtime_error(string_printf("event=demux_start name=%s pd_device=%s message=\"length mismatch: got %zu bytes, "
                 "we need %zu bytes.\"\n", name.c_str(), pdin.name.c_str(), pdin.dev->length, act_len));
 
+    if (act_len < pdin.dev->length)
+        parent->log(warning, "event=demux_start name=%s pd_device=%s message=\"outputs only cover %zu of %zu bytes, "
+                "remaining input bytes will be skipped.\"\n", name.c_str(), pdin.name.c_str(), act_len, pdin.dev->length);
+
     size_t skip_len = 0;
     bool gen_abort = false;
 
@@ -455,6 +459,10 @@ void pdrouting::pd_mux::start() {
     if (act_len > pdout.dev->length)
         throw std::runtime_error(string_printf("event=mux_start name=%s pd_device=%s message=\"length mismatch: got %zu bytes, "
                 "we need %zu bytes.\"\n", name.c_str(), pdout.name.c_str(), pdout.dev->length, act_len));
+
+    if (act_len < pdout.dev->length)
+        parent->log(warning, "event=mux_start name=%s pd_device=%s message=\"inputs only cover %zu of %zu bytes, "
+                "tail will be zero-filled.\"\n", name.c_str(), pdout.name.c_str(), act_len, pdout.dev->length);
     
     size_t skip_len = 0;
     bool gen_abort = false;
@@ -650,6 +658,12 @@ void pdrouting::pd_mux::tick() {
                 pdout.dev->write(pdout.provider, pos, buf, input.len, false);
 
                 pos += input.len;
+            }
+
+            // Zero-fill any tail bytes not covered by inputs
+            if (pos < pdout.dev->length) {
+                auto buf = pdout.dev->next(pdout.provider);
+                memset(buf + pos, 0, pdout.dev->length - pos);
             }
 
             pdout.dev->push(pdout.provider);
