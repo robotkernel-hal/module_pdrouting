@@ -4,64 +4,138 @@
 # -*- mode: yaml -*-
 
 #########################################################
-# logging settings
-
+# Logging settings
+#
 # Standard robotkernel module local loglevel.
+# Valid values: critical, error, warning, info, verbose, debug
 #loglevel: verbose
 
 #########################################################
 # Process data demuxer configuration.
+#
+# Demuxing splits one input process data device into multiple
+# output process data devices at byte boundaries.  Each output
+# consumes the next <len> bytes from the input stream.
+#
+# Options per demuxer:
+#   name              (string, required)  Demuxer name, used as prefix
+#                                         for generated output PD devices.
+#   pd_input_device   (string, required)  Source PD device to split.
+#   zero_copy         (bool, default: false)
+#                     Use pointer_buffer instead of triple_buffer for
+#                     output PDs.  Avoids an extra memcpy per tick but
+#                     requires that consumers do not hold pointers across
+#                     ticks.
+#   trigger           (map, optional)     Explicit trigger configuration.
+#     dev_name        (string)            Trigger device name.
+#     prio            (int, optional)     Trigger priority.
+#     affinity        (list, optional)    CPU affinity.
+#     direct_mode     (bool, optional)    Run in caller's thread context.
+#   trigger_name      (string, deprecated) Legacy trigger device name.
+#                     Falls back to input PD's trigger if omitted.
+#   outputs           (list, required)    Demux output definitions.
+#     name            (string, required)  Output infix name.
+#     len             (int, required)     Number of bytes for this output.
+#     desc            (string, optional)  Explicit PD type definition YAML.
+#                     If omitted, the module auto-generates the description
+#                     from the input PD's type definition.  Falls back to
+#                     raw uint8_t[] if the split does not align with field
+#                     boundaries.
 demux:
-  # Demuxer name (prefix for demuxed process data).
 - name: elmo_0_fsoe_demux
-
-  # Process data device to demux.
   pd_input_device: ethercat.slave_0.inputs.pd
 
-  # Demux data outputs.
-  outputs:
-    # Demuxed process data infix name.
-  - name: fsoe
+  # Set to true to use zero-copy pointer buffers (advanced).
+  #zero_copy: false
 
-    # Demuxing next <len> bytes.
+  # Explicit trigger (optional).  If omitted, the input PD's trigger
+  # device is used automatically.
+  #trigger:
+  #  dev_name: timer.main.trigger
+  #  prio: 50
+  #  affinity: [ 2, 3 ]
+  #  direct_mode: false
+
+  outputs:
+  - name: fsoe
     len: 11
 
-    # Demuxed process data infix name.
   - name: axis
-
-    # Demuxing next <len> bytes.
-    len: 6 
+    len: 6
 
 #########################################################
-# Process data Muxer configuration.
+# Process data muxer configuration.
+#
+# Muxing combines multiple input process data devices into a single
+# output process data device by serializing them consecutively.
+#
+# Options per muxer:
+#   name              (string, required)  Muxer name, used as prefix
+#                                         for generated input PD devices.
+#   pd_output_device  (string, required)  Target PD device to write to.
+#   expected_rate     (int, default: 1)   Expected trigger rate in Hz.
+#                     Used by the automatic trigger_collector to detect
+#                     missed triggers.  Ignored when an explicit trigger
+#                     is configured.
+#   zero_copy         (bool, default: false)
+#                     Use pointer_buffer instead of triple_buffer for
+#                     input PDs.  Pointers reference the output PD's
+#                     internal buffer directly.
+#   trigger           (map, optional)     Explicit trigger configuration.
+#     dev_name        (string)            Trigger device name.
+#     prio            (int, optional)     Trigger priority.
+#     affinity        (list, optional)    CPU affinity.
+#     direct_mode     (bool, optional)    Run in caller's thread context.
+#   trigger_name      (string, deprecated) Legacy trigger device name.
+#                     If omitted, a trigger_collector is used that fires
+#                     when all inputs have been triggered.
+#   inputs            (list, required)    Mux input definitions.
+#     name            (string, required)  Input infix name.
+#     len             (int, required)     Number of bytes this input
+#                                         contributes to the output.
+#     desc            (string, optional)  Explicit PD type definition YAML.
+#                     If omitted, auto-generated from the output PD's type
+#                     definition.  Falls back to raw uint8_t[] if the
+#                     split does not align with field boundaries.
 mux:
-  # Muxer name (prefix for muxed process data)
 - name: elmo_0_fsoe_mux
-
-  # Process data device to mux
   pd_output_device: ethercat.slave_0.outputs.pd
-  
-  # Mux data outputs.
-  outputs:
-    # Muxed process data infix name.
-  - name: fsoe
 
-    # Muxing next <len> bytes.
+  # Expected trigger rate for the automatic trigger_collector.
+  #expected_rate: 1000
+
+  # Set to true to use zero-copy pointer buffers (advanced).
+  #zero_copy: false
+
+  # Explicit trigger (optional).  If omitted, a trigger_collector is
+  # used that fires when all inputs have been triggered at least once.
+  #trigger:
+  #  dev_name: timer.main.trigger
+  #  prio: 50
+  #  affinity: [ 2, 3 ]
+  #  direct_mode: false
+
+  inputs:
+  - name: fsoe
     len: 11
 
-    # Muxed process data infix name.
   - name: axis
-
-    # Muxing next <len> bytes.
-    len: 6 
+    len: 6
 
 #########################################################
-# Process data one-to-many relationship
+# Process data one-to-many (broadcast) configuration.
+#
+# One-to-many distributes the entire contents of one input PD device
+# to multiple output PD devices unchanged.  All output PDs must have
+# the same length as the input PD.
+#
+# Options per one-to-many:
+#   name              (string, optional)  Name used in log messages.
+#   pd_input_device   (string, required)  Source PD device to broadcast.
+#   pd_output_devices (list, required)    List of target PD device names.
 one_to_many:
-  # Process data device containing inputs to distribute to 
-  # all specified outputs.
+- name: slave_broadcast
   pd_input_device: ecat.slave_1.inputs.pd
-
-  # Process data outputs devices. 
   pd_output_devices:
   - ecat.slave_2.outputs.pd
+  - ecat.slave_3.outputs.pd

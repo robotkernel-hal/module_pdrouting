@@ -1,24 +1,45 @@
-# Configuration file for module_pdrouting.
+# Configuration file for module_pdrouting using robotkernel class/instance templates.
+#
+# This file demonstrates how to use the classes/instances pattern to avoid
+# repetition when configuring many similar muxers, demuxers, or one-to-many
+# broadcast entries.
 #
 # vi: set ft=yaml nowrap:
 # -*- mode: yaml -*-
 
 #########################################################
-# logging settings
-
+# Logging settings
+#
 # Standard robotkernel module local loglevel.
+# Valid values: critical, error, warning, info, verbose, debug
 #loglevel: verbose
 
 #########################################################
 # Process data demuxer configuration.
+#
+# Demuxing splits one input process data device into multiple
+# output process data devices at byte boundaries.
+#
+# Per-demuxer options (see pdrouting.rkc for full option list):
+#   name              (string, required)  Demuxer name.
+#   pd_input_device   (string, required)  Source PD device to split.
+#   zero_copy         (bool, default: false)
+#                     Use pointer_buffer for zero-copy output PDs.
+#   trigger           (map, optional)     Explicit trigger config.
+#   trigger_name      (string, deprecated) Legacy trigger device name.
+#   outputs           (list, required)    Output definitions.
+#     name            (string, required)  Output infix name.
+#     len             (int, required)     Byte count for this output.
+#     desc            (string, optional)  Explicit PD type definition YAML.
 demux:
   classes:
     datagen_outputs:
-      name: $name               # Demuxer name (prefix for demuxed process data).
-      pd_input_device: $pdin    # Process data device to demux.
-      outputs:                  # Demux data outputs.
-      - name: axis              # Demuxed process data infix name.
-        len: 16                 # Demuxing next <len> bytes.
+      name: $name
+      pd_input_device: $pdin
+      #zero_copy: false
+      outputs:
+      - name: axis
+        len: 16
 
   instances:
   - { use_class: datagen_outputs, name: datagen_demux_0, pdin: datagen.slave_0.inputs.pd }
@@ -30,15 +51,33 @@ demux:
   - { use_class: datagen_outputs, name: datagen_demux_6, pdin: datagen.slave_6.inputs.pd }
 
 #########################################################
-# Process data Muxer configuration.
+# Process data muxer configuration.
+#
+# Muxing combines multiple input process data devices into a single
+# output process data device by serializing them consecutively.
+#
+# Per-muxer options (see pdrouting.rkc for full option list):
+#   name              (string, required)  Muxer name.
+#   pd_output_device  (string, required)  Target PD device to write to.
+#   expected_rate     (int, default: 1)   Expected trigger rate in Hz.
+#   zero_copy         (bool, default: false)
+#                     Use pointer_buffer for zero-copy input PDs.
+#   trigger           (map, optional)     Explicit trigger config.
+#   trigger_name      (string, deprecated) Legacy trigger device name.
+#   inputs            (list, required)    Input definitions.
+#     name            (string, required)  Input infix name.
+#     len             (int, required)     Byte count this input contributes.
+#     desc            (string, optional)  Explicit PD type definition YAML.
 mux:
   classes:
     datagen_inputs:
-      name: $name               # Muxer name (prefix for muxed process data)
-      pd_output_device: $pdout  # Process data device to mux
-      inputs:                   # Mux data inputs.
-      - name: axis              # Muxed process data infix name.
-        len: 24                 # Muxing next <len> bytes.
+      name: $name
+      pd_output_device: $pdout
+      #expected_rate: 1000
+      #zero_copy: false
+      inputs:
+      - name: axis
+        len: 24
 
   instances:
   - { use_class: datagen_inputs, name: datagen_mux_0, pdout: datagen.slave_0.outputs.pd }
@@ -50,12 +89,24 @@ mux:
   - { use_class: datagen_inputs, name: datagen_mux_6, pdout: datagen.slave_6.outputs.pd }
 
 #########################################################
-# Process data one-to-many relationship
-#one_to_many:
-#  # Process data device containing inputs to distribute to 
-#  # all specified outputs.
-#  pd_input_device: ecat.slave_1.inputs.pd
+# Process data one-to-many (broadcast) configuration.
 #
-#  # Process data outputs devices. 
-#  pd_output_devices:
-#  - ecat.slave_2.outputs.pd
+# One-to-many distributes the entire contents of one input PD device
+# to multiple output PD devices unchanged.  All output PDs must have
+# the same length as the input PD.
+#
+# Per one-to-many options:
+#   name              (string, optional)  Name used in log messages.
+#   pd_input_device   (string, required)  Source PD device to broadcast.
+#   pd_output_devices (list, required)    List of target PD device names.
+one_to_many:
+  classes:
+    broadcast:
+      name: $name
+      pd_input_device: $pdin
+      pd_output_devices: $pdouts
+
+  instances:
+  - { use_class: broadcast, name: master_to_slaves,
+      pdin: ecat.master.inputs.pd,
+      pdouts: [ ecat.slave_0.outputs.pd, ecat.slave_1.outputs.pd, ecat.slave_2.outputs.pd ] }
