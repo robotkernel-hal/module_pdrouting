@@ -28,7 +28,7 @@ write to their own PD; the mux assembles them into the layout expected by
 a hardware output (e.g. EtherCAT PDO).
 
 ```
-app_fsoe.outputs.pd   (11 bytes) ─┐
+app_fsoe.outputs.pd   (11 bytes)  ─┐
                                    ├─→ ethercat.slave_0.outputs.pd  (17 bytes)
 app_axis.outputs.pd    (6 bytes)  ─┘
 ```
@@ -42,8 +42,8 @@ controllers simultaneously.
 
 ```
 ecat.master.inputs.pd  ──→ ecat.slave_0.outputs.pd
-                 ──→ ecat.slave_1.outputs.pd
-                 ──→ ecat.slave_2.outputs.pd
+                       ──→ ecat.slave_1.outputs.pd
+                       ──→ ecat.slave_2.outputs.pd
 ```
 
 ## Generated Devices
