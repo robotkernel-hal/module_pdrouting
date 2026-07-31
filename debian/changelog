@@ -1,5 +1,19 @@
-module-pdrouting (6.0.0) unstable; urgency=low
+module-pdrouting (6.0.0) stable; urgency=low
 
-  * prep: 6.0.0
+  * fix: remove trigger in one_to_many::stop() to prevent use-after-free
+  * fix: prevent dangling pointer in pd_demux zero_copy mode
+  * fix: call stop() from destructors if still started
+  * fix: wrap tick() methods in try/catch for exception safety
+  * fix: make start() exception-safe by deferring started flag
+  * fix: warn on partial PD coverage and zero-fill mux tail bytes
+  * fix: remove leftover debug printf in mux template parsing
+  * fix: add template/map YAML support for one_to_many
+  * fix: use size_t for pos in pd_mux::tick() to match length type
+  * fix: correct 'reseting' typo to 'resetting' in log messages
+  * fix: add .conanignore to exclude build artifacts from exports_sources
+  * fix: remove dead pd_mux_merge class from header
+  * fix: replace broken m4_ifdef with standard pkgconfigdir AC_SUBST
+  * doc: fix mux outputs->inputs bug, document all config options
+  * README: rework into structured reference document
 
  -- Robert Burger <robert.burger@dlr.de>  Tue, 25 Mar 2025 11:12:34 +0100
