@@ -1,16 +1,29 @@
 # module_pdrouting
 
-This robotkernel module does process data routing. It enables handles process data devices in two connection methods. 
+This robotkernel module provides process data (PD) routing.  It supports
+three routing modes:
 
 <dl>
-  <dt>Multiplexing</dt>
-  <dd>With multiplexing the modules enables that many source process data devices are *multiplexed* into one target process data device. For this the source pd's are serialized consecutively into a new or arleady exting target pd.</dd>
+  <dt>Multiplexing (mux)</dt>
+  <dd>Many source process data devices are serialized consecutively into a
+      single target process data device.  By default a trigger_collector
+      fires the mux tick when all inputs have been triggered at least once.</dd>
 
-  <dt>Demultiplexing</dt>
-  <dd>The opposite method of multiplexing. Here one source process data devices is splitted into many target process data devices. It it always splitted at byte boundaries</dd>
+  <dt>Demultiplexing (demux)</dt>
+  <dd>One source process data device is split into many target process data
+      devices at byte boundaries.  Each output consumes the next <code>len</code>
+      bytes from the input stream.</dd>
+
+  <dt>One-to-many (broadcast)</dt>
+  <dd>The entire contents of one input PD device are distributed unchanged
+      to multiple output PD devices.  All output PDs must have the same
+      length as the input PD.</dd>
 </dl>
 
 ## Configuration
+
+For full option documentation see <a href="doc/pdrouting.rkc">doc/pdrouting.rkc</a>
+and <a href="doc/pdrouting_with_classes.rkc">doc/pdrouting_with_classes.rkc</a>.
 
 ```yaml
 # Configuration file for module_pdrouting.
@@ -19,75 +32,80 @@ This robotkernel module does process data routing. It enables handles process da
 # -*- mode: yaml -*-
 
 #########################################################
-# logging settings
-
+# Logging settings
 # Standard robotkernel module local loglevel.
+# Valid values: critical, error, warning, info, verbose, debug
 #loglevel: verbose
 
 #########################################################
 # Process data demuxer configuration.
+#
+# Options: name, pd_input_device, zero_copy, trigger, trigger_name (deprecated),
+#          outputs (list of name, len, desc)
 demux:
-- # Demuxer name (prefix for demuxed process data).
-  name: elmo_0_fsoe_demux
-
-  # Process data device to demux.
+- name: elmo_0_fsoe_demux
   pd_input_device: ethercat.slave_0.inputs.pd
 
-  # Demux data outputs.
-  outputs:
-  - # Demuxed process data infix name.
-    name: fsoe
+  # Set to true to use zero-copy pointer buffers (advanced).
+  #zero_copy: false
 
-    # Demuxing next <len> bytes.
+  # Explicit trigger (optional).  If omitted, the input PD's trigger
+  # device is used automatically.
+  #trigger:
+  #  dev_name: timer.main.trigger
+  #  prio: 50
+  #  affinity: [ 2, 3 ]
+  #  direct_mode: false
+
+  outputs:
+  - name: fsoe
     len: 11
 
-  - # Demuxed process data infix name.
-    name: axis
-
-    # Demuxing next <len> bytes.
-    len: 6 
+  - name: axis
+    len: 6
 
 #########################################################
-# Process data Muxer configuration.
+# Process data muxer configuration.
+#
+# Options: name, pd_output_device, expected_rate, zero_copy, trigger,
+#          trigger_name (deprecated), inputs (list of name, len, desc)
 mux:
-- # Muxer name (prefix for muxed process data)
-  name: elmo_0_fsoe_mux
-
-  # Process data device to mux
+- name: elmo_0_fsoe_mux
   pd_output_device: ethercat.slave_0.outputs.pd
 
-  # Trigger device to be trigger when all muxing devices have data.
-  trigger_name: ethercat.slave_0.inputs.trigger
-  
-  # Mux data outputs.
-  outputs:
-  - # Muxed process data infix name.
-    name: fsoe
+  # Expected trigger rate for the automatic trigger_collector.
+  #expected_rate: 1000
 
-    # Muxing next <len> bytes.
+  # Set to true to use zero-copy pointer buffers (advanced).
+  #zero_copy: false
+
+  # Explicit trigger (optional).  If omitted, a trigger_collector is
+  # used that fires when all inputs have been triggered at least once.
+  #trigger:
+  #  dev_name: timer.main.trigger
+  #  prio: 50
+  #  affinity: [ 2, 3 ]
+  #  direct_mode: false
+
+  inputs:
+  - name: fsoe
     len: 11
 
-  - # Muxed process data infix name.
-    name: axis
+  - name: axis
+    len: 6
 
-    # Muxing next <len> bytes.
-    len: 6 
-         
 #########################################################
-# Process data one-to-many relationship
+# Process data one-to-many (broadcast) configuration.
+#
+# Options: name, pd_input_device, pd_output_devices
 one_to_many:
-  # Process data device containing inputs to distribute to 
-  # all specified outputs.
-  pd_input_device: <name>.inputs.pd
-
-  # Process data outputs devices. 
+- name: slave_broadcast
+  pd_input_device: ecat.slave_1.inputs.pd
   pd_output_devices:
-  - <output_1>.outputs.pd
-  - <output_2>.outputs.pd
-  - <output_3>.outputs.pd
-  - <output_4>.outputs.pd
+  - ecat.slave_2.outputs.pd
+  - ecat.slave_3.outputs.pd
 ```
 
-## Process data 
+## Process data
 
 [[Category:robotkernel-5|pdrouting]]
