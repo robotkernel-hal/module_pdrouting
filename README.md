@@ -1,111 +1,135 @@
 # module_pdrouting
 
-This robotkernel module provides process data (PD) routing.  It supports
-three routing modes:
+Process data routing module for robotkernel.  It bridges hardware-level
+process data (e.g. EtherCAT PDS/PDS) and application-level modules by
+splitting, combining, or broadcasting PD streams.
 
-<dl>
-  <dt>Multiplexing (mux)</dt>
-  <dd>Many source process data devices are serialized consecutively into a
-      single target process data device.  By default a trigger_collector
-      fires the mux tick when all inputs have been triggered at least once.</dd>
+## Routing Modes
 
-  <dt>Demultiplexing (demux)</dt>
-  <dd>One source process data device is split into many target process data
-      devices at byte boundaries.  Each output consumes the next <code>len</code>
-      bytes from the input stream.</dd>
+### Demux — Split one PD into many
 
-  <dt>One-to-many (broadcast)</dt>
-  <dd>The entire contents of one input PD device are distributed unchanged
-      to multiple output PD devices.  All output PDs must have the same
-      length as the input PD.</dd>
-</dl>
+Takes a single input PD device and splits it at byte boundaries into
+multiple output PD devices.  Typical use: an EtherCAT slave exposes a
+single large input PD containing several logical data blocks (e.g. FSoE
+payload + axis state); the demux exposes each block as its own PD device
+so application modules can subscribe independently.
 
-## Configuration
-
-For full option documentation see <a href="doc/pdrouting.rkc">doc/pdrouting.rkc</a>
-and <a href="doc/pdrouting_with_classes.rkc">doc/pdrouting_with_classes.rkc</a>.
-
-```yaml
-# Configuration file for module_pdrouting.
-#
-# vi: set ft=yaml nowrap:
-# -*- mode: yaml -*-
-
-#########################################################
-# Logging settings
-# Standard robotkernel module local loglevel.
-# Valid values: critical, error, warning, info, verbose, debug
-#loglevel: verbose
-
-#########################################################
-# Process data demuxer configuration.
-#
-# Options: name, pd_input_device, zero_copy, trigger, trigger_name (deprecated),
-#          outputs (list of name, len, desc)
-demux:
-- name: elmo_0_fsoe_demux
-  pd_input_device: ethercat.slave_0.inputs.pd
-
-  # Set to true to use zero-copy pointer buffers (advanced).
-  #zero_copy: false
-
-  # Explicit trigger (optional).  If omitted, the input PD's trigger
-  # device is used automatically.
-  #trigger:
-  #  dev_name: timer.main.trigger
-  #  prio: 50
-  #  affinity: [ 2, 3 ]
-  #  direct_mode: false
-
-  outputs:
-  - name: fsoe
-    len: 11
-
-  - name: axis
-    len: 6
-
-#########################################################
-# Process data muxer configuration.
-#
-# Options: name, pd_output_device, expected_rate, zero_copy, trigger,
-#          trigger_name (deprecated), inputs (list of name, len, desc)
-mux:
-- name: elmo_0_fsoe_mux
-  pd_output_device: ethercat.slave_0.outputs.pd
-
-  # Expected trigger rate for the automatic trigger_collector.
-  #expected_rate: 1000
-
-  # Set to true to use zero-copy pointer buffers (advanced).
-  #zero_copy: false
-
-  # Explicit trigger (optional).  If omitted, a trigger_collector is
-  # used that fires when all inputs have been triggered at least once.
-  #trigger:
-  #  dev_name: timer.main.trigger
-  #  prio: 50
-  #  affinity: [ 2, 3 ]
-  #  direct_mode: false
-
-  inputs:
-  - name: fsoe
-    len: 11
-
-  - name: axis
-    len: 6
-
-#########################################################
-# Process data one-to-many (broadcast) configuration.
-#
-# Options: name, pd_input_device, pd_output_devices
-one_to_many:
-- name: slave_broadcast
-  pd_input_device: ecat.slave_1.inputs.pd
-  pd_output_devices:
-  - ecat.slave_2.outputs.pd
-  - ecat.slave_3.outputs.pd
+```
+ethercat.slave_0.inputs.pd  (17 bytes)
+  ├─ module_pdrouting.elmo_0_demux.fsoe.inputs.pd   (bytes  0-10)
+  └─ module_pdrouting.elmo_0_demux.axis.inputs.pd    (bytes 11-16)
 ```
 
-## Process data
+### Mux — Combine many PDs into one
+
+Takes multiple input PD devices and serializes them consecutively into a
+single output PD device.  Typical use: several application modules each
+write to their own PD; the mux assembles them into the layout expected by
+a hardware output (e.g. EtherCAT PDO).
+
+```
+app_fsoe.outputs.pd   (11 bytes) ─┐
+                                   ├─→ ethercat.slave_0.outputs.pd  (17 bytes)
+app_axis.outputs.pd    (6 bytes)  ─┘
+```
+
+### One-to-Many — Broadcast one PD to many
+
+Copies the entire contents of one input PD to multiple output PDs
+unchanged.  All outputs must have the same length as the input.
+Typical use: distributing a master's sensor data to several slave
+controllers simultaneously.
+
+```
+ecat.master.inputs.pd  ──→ ecat.slave_0.outputs.pd
+                 ──→ ecat.slave_1.outputs.pd
+                 ──→ ecat.slave_2.outputs.pd
+```
+
+## Generated Devices
+
+For each demux output and mux input the module automatically creates:
+
+| Device | Path pattern | Purpose |
+|--------|-------------|---------|
+| Process data | `<module>.<name>.<entry>.{inputs,outputs}.pd` | The routed PD |
+| PD inspection | same path | Runtime type & value inspection |
+
+The module also registers PD type definitions at
+`<module>.<name>.<entry>.{inputs,outputs}.definition` so consumers can
+query the data layout.
+
+## PD Type Descriptions
+
+By default the module auto-generates the PD type description for each
+routed entry by walking the source PD's YAML definition and matching
+field sizes against the configured `len`.  If the split aligns cleanly
+with field boundaries, the generated description preserves the original
+field names and types.  If the split falls in the middle of a field,
+generation is aborted and the entry falls back to a raw
+`uint8_t[]` array of the requested length.
+
+To override the auto-generated description, supply an explicit `desc`
+field on the entry.
+
+## Trigger Behavior
+
+| Mode | Default | Override |
+|------|---------|----------|
+| **Demux** | Input PD's trigger device | `trigger:` map or `trigger_name:` (deprecated) |
+| **Mux** | `trigger_collector` — fires when all inputs have triggered | `trigger:` map or `trigger_name:` (deprecated) |
+| **One-to-many** | Input PD's trigger device | (not configurable) |
+
+The `trigger:` map supports `dev_name`, `prio`, `affinity`, and
+`direct_mode`.  When a mux uses the default `trigger_collector`, the
+`expected_rate` option (default: 1 Hz) controls missed-trigger detection.
+
+## Zero-Copy Mode
+
+Setting `zero_copy: true` on a demux or mux replaces the default
+`triple_buffer` PDs with `pointer_buffer` PDs, eliminating one memcpy
+per tick.  Trade-offs:
+
+- **Demux:** input data is copied once into a persistent internal buffer;
+  output pointers reference that buffer.  Safe as long as consumers do
+  not hold pointers across ticks.
+- **Mux:** input pointers reference the output PD's internal buffer
+  directly.  Producers write into the output buffer via the input PDs.
+
+## Configuration Reference
+
+| Section | Option | Type | Required | Default | Description |
+|---------|--------|------|----------|---------|-------------|
+| **demux** | `name` | string | yes | — | Demuxer name (device path prefix) |
+| | `pd_input_device` | string | yes | — | Source PD device to split |
+| | `zero_copy` | bool | no | `false` | Use pointer_buffer for outputs |
+| | `trigger` | map | no | — | Explicit trigger (`dev_name`, `prio`, `affinity`, `direct_mode`) |
+| | `trigger_name` | string | no | — | Legacy trigger (deprecated) |
+| | `outputs[].name` | string | yes | — | Output entry infix name |
+| | `outputs[].len` | int | yes | — | Byte count for this output |
+| | `outputs[].desc` | string | no | — | Explicit PD type definition YAML |
+| **mux** | `name` | string | yes | — | Muxer name (device path prefix) |
+| | `pd_output_device` | string | yes | — | Target PD device to write to |
+| | `expected_rate` | int | no | `1` | Expected trigger rate in Hz (trigger_collector) |
+| | `zero_copy` | bool | no | `false` | Use pointer_buffer for inputs |
+| | `trigger` | map | no | — | Explicit trigger (`dev_name`, `prio`, `affinity`, `direct_mode`) |
+| | `trigger_name` | string | no | — | Legacy trigger (deprecated) |
+| | `inputs[].name` | string | yes | — | Input entry infix name |
+| | `inputs[].len` | int | yes | — | Byte count this input contributes |
+| | `inputs[].desc` | string | no | — | Explicit PD type definition YAML |
+| **one_to_many** | `name` | string | no | — | Name used in log messages |
+| | `pd_input_device` | string | yes | — | Source PD device to broadcast |
+| | `pd_output_devices` | list | yes | — | Target PD device names |
+
+Each top-level section (`demux`, `mux`, `one_to_many`) accepts either a
+plain YAML sequence or a `classes`/`instances` map for robotkernel
+template expansion.
+
+## Examples
+
+Complete, well-commented configuration examples:
+
+- **[doc/pdrouting.rkc](doc/pdrouting.rkc)** — all three routing modes
+- **[doc/pdrouting_with_classes.rkc](doc/pdrouting_with_classes.rkc)** — using class/instance templates for bulk configuration
 
 [[Category:robotkernel-5|pdrouting]]
